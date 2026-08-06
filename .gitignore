@@ -1,0 +1,8 @@
+node_modules
+dist
+client/dist
+server/dist
+.vscode/.ropeproject
+.DS_Store
+.env
+.env.local
