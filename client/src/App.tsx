@@ -102,20 +102,52 @@ export default function App() {
     }
   }
 
+  const activeIndex = useMemo(() => {
+    return sortedMemories.findIndex((m) => m.id === activeMemoryId);
+  }, [sortedMemories, activeMemoryId]);
+
+  function scrollToMemoryIndex(index: number) {
+    const targetMemory = sortedMemories[index];
+    if (!targetMemory) return;
+    const targetCard = timelineCardRefs.current.get(targetMemory.id);
+    if (targetCard) {
+      targetCard.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+  }
+
+  function handlePrev() {
+    if (activeIndex > 0) {
+      scrollToMemoryIndex(activeIndex - 1);
+    }
+  }
+
+  function handleNext() {
+    if (activeIndex >= 0 && activeIndex < sortedMemories.length - 1) {
+      scrollToMemoryIndex(activeIndex + 1);
+    }
+  }
+
+  function handleCenterScroll() {
+    if (sortedMemories.length === 0) return;
+    const middleIndex = Math.floor(sortedMemories.length / 2);
+    scrollToMemoryIndex(middleIndex);
+  }
+
   useLayoutEffect(() => {
-    if (isLoading || hasInitializedTimelineRef.current) {
+    if (isLoading || hasInitializedTimelineRef.current || sortedMemories.length === 0) {
       return;
     }
 
     const viewport = timelineViewportRef.current;
-    const firstMemory = sortedMemories[0];
-    const firstCard = firstMemory ? timelineCardRefs.current.get(firstMemory.id) : null;
+    const middleIndex = Math.floor(sortedMemories.length / 2);
+    const middleMemory = sortedMemories[middleIndex];
+    const middleCard = middleMemory ? timelineCardRefs.current.get(middleMemory.id) : null;
 
-    if (!viewport || !firstCard) {
+    if (!viewport || !middleCard) {
       return;
     }
 
-    firstCard.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+    middleCard.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
     hasInitializedTimelineRef.current = true;
   }, [isLoading, sortedMemories.length]);
 
@@ -297,6 +329,39 @@ export default function App() {
 
       <section className="timeline-stage" aria-label="memory timeline">
         {isLoading ? <p className="timeline-stage__status">Loading memories...</p> : null}
+
+        {sortedMemories.length > 0 ? (
+          <div className="timeline-nav-bar">
+            <button
+              type="button"
+              className="timeline-nav-btn"
+              onClick={handlePrev}
+              disabled={activeIndex <= 0}
+              aria-label="Previous Memory"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              className="timeline-nav-center-btn"
+              onClick={handleCenterScroll}
+              title="Jump to Center Memory"
+            >
+              <span className="timeline-nav-dot" />
+              <span>{activeIndex >= 0 ? `${activeIndex + 1} of ${sortedMemories.length}` : 'Center'}</span>
+            </button>
+            <button
+              type="button"
+              className="timeline-nav-btn"
+              onClick={handleNext}
+              disabled={activeIndex >= sortedMemories.length - 1}
+              aria-label="Next Memory"
+            >
+              ›
+            </button>
+          </div>
+        ) : null}
+
         <div className="timeline-stage__viewport" ref={timelineViewportRef} onWheel={handleTimelineWheel}>
           {sortedMemories.length > 0 ? (
             <div className="timeline-track">
