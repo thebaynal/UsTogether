@@ -54,7 +54,7 @@ export default function App() {
   }, []);
 
   const sortedMemories = useMemo(
-    () => [...memories].sort((left, right) => left.date.localeCompare(right.date)),
+    () => [...memories].sort((left, right) => new Date(left.date).getTime() - new Date(right.date).getTime()),
     [memories]
   );
 
@@ -182,10 +182,84 @@ export default function App() {
     };
   }, [sortedMemories]);
 
+  const [rawImageSrc, setRawImageSrc] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [panX, setPanX] = useState(0);
+  const [panY, setPanY] = useState(0);
+  const [applyGrain, setApplyGrain] = useState(true);
+
+  const renderProcessedPreview = (
+    src: string | null,
+    z: number,
+    px: number,
+    py: number,
+    grain: boolean
+  ) => {
+    if (!src) {
+      setImagePreview(null);
+      return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 600;
+      canvas.height = 600;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) {
+        setImagePreview(src);
+        return;
+      }
+
+      ctx.fillStyle = '#08212b';
+      ctx.fillRect(0, 0, 600, 600);
+
+      const aspect = img.width / img.height;
+      let drawW = 600 * z;
+      let drawH = 600 * z;
+
+      if (aspect > 1) {
+        drawW = 600 * aspect * z;
+      } else {
+        drawH = (600 / aspect) * z;
+      }
+
+      const offsetX = (600 - drawW) / 2 + (px / 100) * 600;
+      const offsetY = (600 - drawH) / 2 + (py / 100) * 600;
+
+      ctx.drawImage(img, offsetX, offsetY, drawW, drawH);
+
+      if (grain) {
+        const imageData = ctx.getImageData(0, 0, 600, 600);
+        const data = imageData.data;
+        for (let i = 0; i < data.length; i += 4) {
+          const noise = (Math.random() - 0.5) * 24;
+          data[i] = Math.min(255, Math.max(0, data[i] * 1.03 + 8 + noise));
+          data[i + 1] = Math.min(255, Math.max(0, data[i + 1] * 0.98 + 4 + noise));
+          data[i + 2] = Math.min(255, Math.max(0, data[i + 2] * 0.94 - 4 + noise));
+        }
+        ctx.putImageData(imageData, 0, 0);
+      }
+
+      setImagePreview(canvas.toDataURL('image/jpeg', 0.9));
+    };
+
+    img.src = src;
+  };
+
+  useEffect(() => {
+    if (rawImageSrc) {
+      renderProcessedPreview(rawImageSrc, zoom, panX, panY, applyGrain);
+    }
+  }, [rawImageSrc, zoom, panX, panY, applyGrain]);
+
   function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
 
     if (!file) {
+      setRawImageSrc(null);
       setImagePreview(null);
       setImageName('');
       return;
@@ -194,37 +268,77 @@ export default function App() {
     const reader = new FileReader();
 
     reader.onload = () => {
-      setImagePreview(typeof reader.result === 'string' ? reader.result : null);
+      const src = typeof reader.result === 'string' ? reader.result : null;
+      setRawImageSrc(src);
       setImageName(file.name);
+      setZoom(1);
+      setPanX(0);
+      setPanY(0);
+      setApplyGrain(true);
     };
 
     reader.readAsDataURL(file);
   }
 
-  function handleTimelineWheel(event: React.WheelEvent<HTMLDivElement>) {
+  useEffect(() => {
     const viewport = timelineViewportRef.current;
 
     if (!viewport) {
       return;
     }
 
-    const hasHorizontalIntent = Math.abs(event.deltaX) > Math.abs(event.deltaY);
-    const nextDelta = hasHorizontalIntent ? event.deltaX : event.deltaY;
+    let targetScroll = viewport.scrollLeft;
+    let rafId: number | null = null;
 
-    if (nextDelta !== 0) {
-      event.preventDefault();
+    function step() {
+      if (!viewport) {
+        return;
+      }
+      const current = viewport.scrollLeft;
+      const diff = targetScroll - current;
 
-      const currentMemoryIndex = sortedMemories.findIndex((memory) => memory.id === activeMemoryId);
-      const nextMemoryIndex = nextDelta > 0 ? currentMemoryIndex + 1 : currentMemoryIndex - 1;
-      const clampedIndex = Math.max(0, Math.min(sortedMemories.length - 1, nextMemoryIndex));
-      const nextMemory = sortedMemories[clampedIndex];
-      const nextCard = nextMemory ? timelineCardRefs.current.get(nextMemory.id) : null;
-
-      if (nextCard) {
-        nextCard.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      if (Math.abs(diff) > 0.5) {
+        viewport.scrollLeft += diff * 0.45;
+        rafId = requestAnimationFrame(step);
+      } else {
+        viewport.scrollLeft = targetScroll;
+        rafId = null;
       }
     }
-  }
+
+    function handleWheel(event: WheelEvent) {
+      if (!viewport) {
+        return;
+      }
+      event.preventDefault();
+
+      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      const maxScroll = viewport.scrollWidth - viewport.clientWidth;
+
+      targetScroll = Math.max(0, Math.min(maxScroll, targetScroll + delta * 2.5));
+
+      if (rafId === null) {
+        rafId = requestAnimationFrame(step);
+      }
+    }
+
+    function handleScrollSync() {
+      if (rafId === null && viewport) {
+        targetScroll = viewport.scrollLeft;
+      }
+    }
+
+    viewport.addEventListener('wheel', handleWheel, { passive: false });
+    viewport.addEventListener('scroll', handleScrollSync, { passive: true });
+
+    return () => {
+      viewport.removeEventListener('wheel', handleWheel);
+      viewport.removeEventListener('scroll', handleScrollSync);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, []);
 
   async function handleCreateMemory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -249,6 +363,7 @@ export default function App() {
       setMemories((currentMemories) => [...currentMemories, createdMemory]);
       setSelectedMemory(createdMemory);
       setIsComposerOpen(false);
+      setRawImageSrc(null);
       setImagePreview(null);
       setImageName('');
       setFormState({
@@ -264,6 +379,14 @@ export default function App() {
     await deleteMemory(memoryId);
     setMemories((currentMemories) => currentMemories.filter((memory) => memory.id !== memoryId));
     setSelectedMemory(null);
+  }
+
+  function handleOpenMemory(memory: Memory) {
+    const card = timelineCardRefs.current.get(memory.id);
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
+    setSelectedMemory(memory);
   }
 
   return (
@@ -294,6 +417,55 @@ export default function App() {
             <div className="composer__preview">
               {imagePreview ? <img src={imagePreview} alt={imageName || 'Selected upload preview'} /> : <span>No picture selected</span>}
             </div>
+            {rawImageSrc ? (
+              <div className="image-editor-controls">
+                <span className="image-editor-controls__title">Adjust Photo Framing</span>
+                <div className="control-group">
+                  <label>Zoom</label>
+                  <input
+                    type="range"
+                    min="1"
+                    max="2.5"
+                    step="0.05"
+                    value={zoom}
+                    onChange={(e) => setZoom(Number.parseFloat(e.target.value))}
+                  />
+                  <span className="control-group__val">{Math.round(zoom * 100)}%</span>
+                </div>
+                <div className="control-group">
+                  <label>Position X</label>
+                  <input
+                    type="range"
+                    min="-50"
+                    max="50"
+                    step="1"
+                    value={panX}
+                    onChange={(e) => setPanX(Number.parseInt(e.target.value, 10))}
+                  />
+                  <span className="control-group__val">{panX}px</span>
+                </div>
+                <div className="control-group">
+                  <label>Position Y</label>
+                  <input
+                    type="range"
+                    min="-50"
+                    max="50"
+                    step="1"
+                    value={panY}
+                    onChange={(e) => setPanY(Number.parseInt(e.target.value, 10))}
+                  />
+                  <span className="control-group__val">{panY}px</span>
+                </div>
+                <label className="control-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={applyGrain}
+                    onChange={(e) => setApplyGrain(e.target.checked)}
+                  />
+                  <span>Polaroid Grain & Film Tone</span>
+                </label>
+              </div>
+            ) : null}
             <input
               value={formState.title}
               onChange={(event) => setFormState((currentState) => ({ ...currentState, title: event.target.value }))}
@@ -362,14 +534,14 @@ export default function App() {
           </div>
         ) : null}
 
-        <div className="timeline-stage__viewport" ref={timelineViewportRef} onWheel={handleTimelineWheel}>
+        <div className="timeline-stage__viewport" ref={timelineViewportRef}>
           {sortedMemories.length > 0 ? (
             <div className="timeline-track">
               {sortedMemories.map((memory, index) => (
                 <TimelineCard
                   key={memory.id}
                   memory={memory}
-                  onOpen={setSelectedMemory}
+                  onOpen={handleOpenMemory}
                   isActive={memory.id === activeMemoryId}
                   setRef={(node) => setTimelineCardRef(memory.id, node)}
                   rotation={index % 2 === 0 ? -2 : 2}
