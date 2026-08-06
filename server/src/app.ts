@@ -1,13 +1,20 @@
-import cors from 'cors';
 import express from 'express';
-import { memoriesRouter } from './routes/memories';
-import { workspacesRouter } from './routes/workspaces';
+import cors from 'cors';
+import { memoriesRouter } from './routes/memories.js';
+import { workspacesRouter } from './routes/workspaces.js';
 
 export function createApp() {
   const app = express();
 
-  app.use(cors({ origin: 'http://localhost:5173', credentials: true }));
-  app.use(express.json());
+  const frontendOrigin = process.env.CORS_ORIGIN?.trim() || 'http://localhost:5173';
+
+  app.use(
+    cors({
+      origin: frontendOrigin,
+      credentials: true
+    })
+  );
+  app.use(express.json({ limit: '20mb' }));
 
   app.get('/api/health', (_request, response) => {
     response.json({ ok: true });

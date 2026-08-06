@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import type { Memory } from '../types';
+import type { Memory } from '../types.js';
 
 const router = Router();
 
@@ -26,6 +26,17 @@ let memories: Memory[] = [
     imageUrl: 'https://images.unsplash.com/photo-1500375592092-40eb2168fd21?auto=format&fit=crop&w=1200&q=80',
     imageAlt: 'Lake at sunset',
     updatedAt: new Date().toISOString()
+  },
+  {
+    id: '3',
+    workspaceId: 'workspace-demo',
+    title: 'Anniversary dinner',
+    description: 'A small table, a long conversation, and the easiest yes of the year.',
+    date: '2025-02-11',
+    milestoneTag: 'Anniversary',
+    imageUrl: 'https://images.unsplash.com/photo-1529543544282-cf5f0b1f1a7d?auto=format&fit=crop&w=1200&q=80',
+    imageAlt: 'Dinner table with candles',
+    updatedAt: new Date().toISOString()
   }
 ];
 
@@ -35,7 +46,7 @@ const memorySchema = z.object({
   description: z.string().min(1).max(250),
   date: z.string().min(10),
   milestoneTag: z.string().max(40).optional(),
-  imageUrl: z.string().url(),
+  imageUrl: z.string().min(1),
   imageAlt: z.string().min(1)
 });
 

@@ -5,15 +5,20 @@ type Props = {
   memory: Memory;
   onOpen: (memory: Memory) => void;
   rotation: number;
+  isActive: boolean;
+  setRef: (node: HTMLButtonElement | null) => void;
 };
 
-export function TimelineCard({ memory, onOpen, rotation }: Props) {
+export function TimelineCard({ memory, onOpen, rotation, isActive, setRef }: Props) {
   return (
     <motion.button
-      whileHover={{ y: -6, rotate: rotation * 0.4 }}
+      ref={setRef}
+      whileHover={{ y: -6, scale: 1.03 }}
       whileTap={{ scale: 0.98 }}
-      className="timeline-card"
-      style={{ transform: `rotate(${rotation}deg)` }}
+      animate={{ rotate: rotation, scale: isActive ? 1.08 : 1 }}
+      transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+      className={isActive ? 'timeline-card timeline-card--active' : 'timeline-card'}
+      aria-current={isActive ? 'true' : undefined}
       onClick={() => onOpen(memory)}
     >
       <div className="timeline-card__image-wrap">

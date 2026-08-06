@@ -1,6 +1,11 @@
 import type { Memory } from './types';
 
 const workspaceId = 'workspace-demo';
+const apiBaseUrl = import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, '') ?? '';
+
+function apiPath(path: string) {
+  return `${apiBaseUrl}${path}`;
+}
 
 type MemoryResponse = {
   memories?: Memory[];
@@ -34,12 +39,12 @@ async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Pro
 }
 
 export async function loadMemories() {
-  const data = await requestJson<MemoryResponse>('/api/memories');
+  const data = await requestJson<MemoryResponse>(apiPath('/api/memories'));
   return data.memories ?? [];
 }
 
 export async function createMemory(input: CreateMemoryInput) {
-  const data = await requestJson<MemoryResponse>('/api/memories', {
+  const data = await requestJson<MemoryResponse>(apiPath('/api/memories'), {
     method: 'POST',
     body: JSON.stringify({ ...input, workspaceId })
   });
@@ -48,5 +53,5 @@ export async function createMemory(input: CreateMemoryInput) {
 }
 
 export async function deleteMemory(id: string) {
-  await fetch(`/api/memories/${id}`, { method: 'DELETE' });
+  await fetch(apiPath(`/api/memories/${id}`), { method: 'DELETE' });
 }

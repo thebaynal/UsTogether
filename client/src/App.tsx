@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { createMemory, deleteMemory, loadMemories } from './api';
 import { MemoryModal } from './components/MemoryModal';
 import { TimelineCard } from './components/TimelineCard';
@@ -6,9 +6,16 @@ import { sampleMemories } from './data';
 import type { Memory } from './types';
 
 export default function App() {
+  const timelineViewportRef = useRef<HTMLDivElement | null>(null);
+  const hasInitializedTimelineRef = useRef(false);
+  const scrollAnimationFrameRef = useRef<number | null>(null);
+  const timelineCardRefs = useRef(new Map<string, HTMLButtonElement>());
   const [selectedMemory, setSelectedMemory] = useState<Memory | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
+  const [activeMemoryId, setActiveMemoryId] = useState<string | null>(null);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageName, setImageName] = useState('');
   const [formState, setFormState] = useState({
     title: '',
     date: new Date().toISOString().slice(0, 10),
@@ -51,22 +58,167 @@ export default function App() {
     [memories]
   );
 
+  function setTimelineCardRef(memoryId: string, node: HTMLButtonElement | null) {
+    if (node) {
+      timelineCardRefs.current.set(memoryId, node);
+      return;
+    }
+
+    timelineCardRefs.current.delete(memoryId);
+  }
+
+  function updateActiveMemoryFromViewport() {
+    const viewport = timelineViewportRef.current;
+
+    if (!viewport) {
+      return;
+    }
+
+    const viewportRect = viewport.getBoundingClientRect();
+    const viewportCenter = viewportRect.left + viewportRect.width / 2;
+
+    let closestMemoryId: string | null = null;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    for (const memory of sortedMemories) {
+      const card = timelineCardRefs.current.get(memory.id);
+
+      if (!card) {
+        continue;
+      }
+
+      const cardRect = card.getBoundingClientRect();
+      const cardCenter = cardRect.left + cardRect.width / 2;
+      const distance = Math.abs(cardCenter - viewportCenter);
+
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestMemoryId = memory.id;
+      }
+    }
+
+    if (closestMemoryId) {
+      setActiveMemoryId(closestMemoryId);
+    }
+  }
+
+  useLayoutEffect(() => {
+    if (isLoading || hasInitializedTimelineRef.current) {
+      return;
+    }
+
+    const viewport = timelineViewportRef.current;
+    const firstMemory = sortedMemories[0];
+    const firstCard = firstMemory ? timelineCardRefs.current.get(firstMemory.id) : null;
+
+    if (!viewport || !firstCard) {
+      return;
+    }
+
+    firstCard.scrollIntoView({ behavior: 'auto', inline: 'center', block: 'nearest' });
+    hasInitializedTimelineRef.current = true;
+  }, [isLoading, sortedMemories.length]);
+
+  useEffect(() => {
+    const viewport = timelineViewportRef.current;
+
+    if (!viewport || sortedMemories.length === 0) {
+      return;
+    }
+
+    function handleScroll() {
+      if (scrollAnimationFrameRef.current !== null) {
+        return;
+      }
+
+      scrollAnimationFrameRef.current = window.requestAnimationFrame(() => {
+        scrollAnimationFrameRef.current = null;
+        updateActiveMemoryFromViewport();
+      });
+    }
+
+    viewport.addEventListener('scroll', handleScroll, { passive: true });
+    updateActiveMemoryFromViewport();
+
+    return () => {
+      viewport.removeEventListener('scroll', handleScroll);
+
+      if (scrollAnimationFrameRef.current !== null) {
+        window.cancelAnimationFrame(scrollAnimationFrameRef.current);
+        scrollAnimationFrameRef.current = null;
+      }
+    };
+  }, [sortedMemories]);
+
+  function handleImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      setImagePreview(null);
+      setImageName('');
+      return;
+    }
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      setImagePreview(typeof reader.result === 'string' ? reader.result : null);
+      setImageName(file.name);
+    };
+
+    reader.readAsDataURL(file);
+  }
+
+  function handleTimelineWheel(event: React.WheelEvent<HTMLDivElement>) {
+    const viewport = timelineViewportRef.current;
+
+    if (!viewport) {
+      return;
+    }
+
+    const hasHorizontalIntent = Math.abs(event.deltaX) > Math.abs(event.deltaY);
+    const nextDelta = hasHorizontalIntent ? event.deltaX : event.deltaY;
+
+    if (nextDelta !== 0) {
+      event.preventDefault();
+
+      const currentMemoryIndex = sortedMemories.findIndex((memory) => memory.id === activeMemoryId);
+      const nextMemoryIndex = nextDelta > 0 ? currentMemoryIndex + 1 : currentMemoryIndex - 1;
+      const clampedIndex = Math.max(0, Math.min(sortedMemories.length - 1, nextMemoryIndex));
+      const nextMemory = sortedMemories[clampedIndex];
+      const nextCard = nextMemory ? timelineCardRefs.current.get(nextMemory.id) : null;
+
+      if (nextCard) {
+        nextCard.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+      }
+    }
+  }
+
   async function handleCreateMemory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    if (!imagePreview) {
+      setErrorMessage('Please add a picture before saving the memory.');
+      return;
+    }
+
+    setErrorMessage(null);
 
     const createdMemory = await createMemory({
       title: formState.title,
       date: formState.date,
       description: formState.description,
       milestoneTag: formState.milestoneTag || undefined,
-      imageUrl: sampleMemories[0].imageUrl,
-      imageAlt: 'Memory preview image'
+      imageUrl: imagePreview,
+      imageAlt: imageName || 'Uploaded memory image'
     });
 
     if (createdMemory) {
       setMemories((currentMemories) => [...currentMemories, createdMemory]);
       setSelectedMemory(createdMemory);
       setIsComposerOpen(false);
+      setImagePreview(null);
+      setImageName('');
       setFormState({
         title: '',
         date: new Date().toISOString().slice(0, 10),
@@ -86,18 +238,30 @@ export default function App() {
     <main className="app-shell">
       <section className="hero">
         <div className="hero__inner">
-          <p className="eyebrow">UsTogether</p>
-          <h1>A horizontal memory timeline built for two.</h1>
+          <p className="eyebrow">Us Together</p>
+          <h1>Polaroid memories, centered in time.</h1>
         </div>
       </section>
 
       <section className="composer" aria-label="add memory">
         <button className="composer__toggle" type="button" onClick={() => setIsComposerOpen((current) => !current)}>
           <span className="composer__plus">+</span>
-          <span>{isComposerOpen ? 'Close uploader' : 'Upload memory'}</span>
+          <span className="composer__label">{isComposerOpen ? 'Close' : 'Add'}</span>
         </button>
         {isComposerOpen ? (
           <form className="composer__form" onSubmit={handleCreateMemory}>
+            <label className="composer__file">
+              <span className="composer__file-button">Add picture</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageChange}
+                required
+              />
+            </label>
+            <div className="composer__preview">
+              {imagePreview ? <img src={imagePreview} alt={imageName || 'Selected upload preview'} /> : <span>No picture selected</span>}
+            </div>
             <input
               value={formState.title}
               onChange={(event) => setFormState((currentState) => ({ ...currentState, title: event.target.value }))}
@@ -133,7 +297,7 @@ export default function App() {
 
       <section className="timeline-stage" aria-label="memory timeline">
         {isLoading ? <p className="timeline-stage__status">Loading memories...</p> : null}
-        <div className="timeline-stage__viewport">
+        <div className="timeline-stage__viewport" ref={timelineViewportRef} onWheel={handleTimelineWheel}>
           {sortedMemories.length > 0 ? (
             <div className="timeline-track">
               {sortedMemories.map((memory, index) => (
@@ -141,6 +305,8 @@ export default function App() {
                   key={memory.id}
                   memory={memory}
                   onOpen={setSelectedMemory}
+                  isActive={memory.id === activeMemoryId}
+                  setRef={(node) => setTimelineCardRef(memory.id, node)}
                   rotation={index % 2 === 0 ? -2 : 2}
                 />
               ))}
