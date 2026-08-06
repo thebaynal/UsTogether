@@ -88,9 +88,6 @@ export default function App() {
         <div className="hero__inner">
           <p className="eyebrow">UsTogether</p>
           <h1>A horizontal memory timeline built for two.</h1>
-          <p className="hero__copy">
-            Start with the timeline, then layer in shared workspaces, uploads, and editing flow.
-          </p>
         </div>
       </section>
 
