@@ -281,64 +281,19 @@ export default function App() {
   }
 
   useEffect(() => {
-    const viewport = timelineViewportRef.current;
+  const viewport = timelineViewportRef.current;
+  if (!viewport) return;
 
-    if (!viewport) {
-      return;
-    }
-
-    let targetScroll = viewport.scrollLeft;
-    let rafId: number | null = null;
-
-    function step() {
-      if (!viewport) {
-        return;
-      }
-      const current = viewport.scrollLeft;
-      const diff = targetScroll - current;
-
-      if (Math.abs(diff) > 0.5) {
-        viewport.scrollLeft += diff * 0.45;
-        rafId = requestAnimationFrame(step);
-      } else {
-        viewport.scrollLeft = targetScroll;
-        rafId = null;
-      }
-    }
-
-    function handleWheel(event: WheelEvent) {
-      if (!viewport) {
-        return;
-      }
+  function handleWheel(event: WheelEvent) {
+    if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
       event.preventDefault();
-
-      const delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
-      const maxScroll = viewport.scrollWidth - viewport.clientWidth;
-
-      targetScroll = Math.max(0, Math.min(maxScroll, targetScroll + delta * 2.5));
-
-      if (rafId === null) {
-        rafId = requestAnimationFrame(step);
-      }
+      viewport!.scrollLeft += event.deltaY * 2.5;
     }
+  }
 
-    function handleScrollSync() {
-      if (rafId === null && viewport) {
-        targetScroll = viewport.scrollLeft;
-      }
-    }
-
-    viewport.addEventListener('wheel', handleWheel, { passive: false });
-    viewport.addEventListener('scroll', handleScrollSync, { passive: true });
-
-    return () => {
-      viewport.removeEventListener('wheel', handleWheel);
-      viewport.removeEventListener('scroll', handleScrollSync);
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-      }
-    };
-  }, []);
+  viewport.addEventListener('wheel', handleWheel, { passive: false });
+  return () => viewport.removeEventListener('wheel', handleWheel);
+}, []);
 
   async function handleCreateMemory(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
