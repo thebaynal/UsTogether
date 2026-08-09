@@ -52,6 +52,10 @@ export async function createMemory(input: CreateMemoryInput) {
   return data.memory;
 }
 
+// api.ts
 export async function deleteMemory(id: string) {
-  await fetch(apiPath(`/api/memories/${id}`), { method: 'DELETE' });
+  const response = await fetch(apiPath(`/api/memories/${id}`), { method: 'DELETE' });
+  if (!response.ok) {
+    throw new Error(`Failed to delete memory ${id}: ${response.status}`);
+  }
 }

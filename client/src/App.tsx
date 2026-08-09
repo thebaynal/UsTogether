@@ -330,11 +330,16 @@ export default function App() {
     }
   }
 
-  async function handleDeleteMemory(memoryId: string) {
+
+async function handleDeleteMemory(memoryId: string) {
+  try {
     await deleteMemory(memoryId);
     setMemories((currentMemories) => currentMemories.filter((memory) => memory.id !== memoryId));
     setSelectedMemory(null);
+  } catch (error) {
+    setErrorMessage('Could not delete this memory. Please try again.');
   }
+}
 
   function handleOpenMemory(memory: Memory) {
     const card = timelineCardRefs.current.get(memory.id);
