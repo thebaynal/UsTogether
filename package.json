@@ -2,15 +2,26 @@
   "name": "ustogether",
   "private": true,
   "workspaces": [
-    "client",
-    "server"
+    "client"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w client\"",
-    "build": "npm run build -w server && npm run build -w client",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w client"
+    "dev": "npm run dev -w client",
+    "web": "npm run web -w client",
+    "android": "npm run android -w client",
+    "ios": "npm run ios -w client",
+    "build": "npm run build -w client",
+    "typecheck": "npm run typecheck -w client",
+    "test": "npm run test -w client"
+  },
+  "overrides": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   },
   "devDependencies": {
-    "concurrently": "^9.0.1"
+    "tsx": "^4.23.0"
+  },
+  "dependencies": {
+    "react": "19.2.3",
+    "react-dom": "19.2.3"
   }
 }

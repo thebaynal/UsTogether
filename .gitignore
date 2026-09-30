@@ -2,6 +2,11 @@ node_modules
 dist
 client/dist
 server/dist
+.expo/
+client/.expo/
+client/web-build/
+supabase/.temp/
+supabase/.branches/
 .vscode/.ropeproject
 .DS_Store
 .env
