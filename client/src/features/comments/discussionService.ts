@@ -70,9 +70,8 @@ export async function toggleReaction(memoryId: string, userId: string, emoji: st
     return;
   }
 
-  const { error } = await client.from('reactions').upsert(
-    { memory_id: memoryId, user_id: userId, emoji },
-    { onConflict: 'memory_id,user_id' }
-  );
+  const { error } = current
+    ? await client.from('reactions').update({ emoji }).eq('id', current.id)
+    : await client.from('reactions').insert({ memory_id: memoryId, user_id: userId, emoji });
   raise(error);
 }

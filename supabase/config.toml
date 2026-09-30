@@ -2,7 +2,7 @@ project_id = "ustogether"
 
 [api]
 enabled = true
-schemas = ["public", "storage", "graphql_public"]
+schemas = ["public"]
 extra_search_path = ["public", "extensions"]
 max_rows = 1000
 
