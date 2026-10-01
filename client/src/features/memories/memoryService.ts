@@ -1,16 +1,10 @@
 import * as Crypto from 'expo-crypto';
 import type { ImageMimeType, Memory } from '@/types/domain';
 import { requireSupabase } from '@/lib/supabase';
-import { MAX_IMAGE_BYTES, sortMemories, validateImageSelection } from './logic';
+import { sortMemories } from './logic';
+import { prepareImageUpload, type ImageSelection } from './imageUpload';
 
 const SIGNED_URL_SECONDS = 10 * 60;
-
-type ImageSelection = {
-  uri: string;
-  fileName: string;
-  mimeType?: string | null;
-  fileSize?: number | null;
-};
 
 type MemoryInput = {
   spaceId: string;
@@ -81,7 +75,7 @@ export async function listMemories(spaceId: string): Promise<Memory[]> {
   const { data: signedUrls, error: signedError } = await client.storage
     .from('memory-images')
     .createSignedUrls(rows.map((row) => row.image_path), SIGNED_URL_SECONDS);
-  raise(signedError);
+  if (signedError) return sortMemories(rows.map((row) => mapMemory(row as MemoryRow, '')));
   const urlsByPath = new Map((signedUrls ?? []).map((item) => [item.path, item.signedUrl]));
   return sortMemories(rows.map((row) => mapMemory(row as MemoryRow, urlsByPath.get(row.image_path) ?? '')));
 }
@@ -95,25 +89,20 @@ export async function getMemory(memoryId: string): Promise<Memory> {
     .single();
   raise(error);
   const typedRow = row as MemoryRow;
-  return mapMemory(typedRow, await signedImageUrl(typedRow.image_path));
+  return mapMemory(typedRow, await signedImageUrl(typedRow.image_path).catch(() => ''));
 }
 
 export async function createMemory(input: MemoryInput): Promise<Memory> {
   const client = requireSupabase();
-  const mimeType = validateImageSelection(input.image);
-  const response = await fetch(input.image.uri);
-  if (!response.ok) throw new Error('Could not read this image. Please choose it again.');
-  const bytes = await response.arrayBuffer();
-  if (bytes.byteLength > MAX_IMAGE_BYTES) throw new Error('Images must be 10 MB or smaller.');
-  if (!bytes.byteLength) throw new Error('This image looks empty. Choose another photo.');
+  const { body, mimeType } = await prepareImageUpload(input.image);
 
   const id = Crypto.randomUUID();
   const imagePath = `${input.spaceId}/${id}.${fileExtension(mimeType)}`;
-  const { error: uploadError } = await client.storage.from('memory-images').upload(imagePath, bytes, {
+  const { error: uploadError } = await client.storage.from('memory-images').upload(imagePath, body, {
     contentType: mimeType,
     upsert: false
   });
-  raise(uploadError);
+  if (uploadError) throw new Error(`Your photo could not be uploaded: ${uploadError.message}`);
 
   const { data: row, error: insertError } = await client.from('memories').insert({
     id,
@@ -135,7 +124,10 @@ export async function createMemory(input: MemoryInput): Promise<Memory> {
   }
 
   const typedRow = row as MemoryRow;
-  return mapMemory(typedRow, await signedImageUrl(imagePath));
+  // The memory is already committed. A preview failure must not turn a saved
+  // memory into an apparent save failure and invite duplicate submissions.
+  const imageUrl = await signedImageUrl(imagePath).catch(() => '');
+  return mapMemory(typedRow, imageUrl);
 }
 
 export async function updateMemory(memoryId: string, input: {

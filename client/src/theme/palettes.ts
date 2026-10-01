@@ -18,29 +18,29 @@ export type Palette = {
 
 export const palettes: Record<ThemeKey, Palette> = {
   rose: {
-    key: 'rose', label: 'Rose cloud', background: '#FFF7F7', surface: '#FFFFFF', surfaceSoft: '#FFE9EC',
-    primary: '#D97289', primaryPressed: '#B9506B', accent: '#F3B9C6', ink: '#39252D', muted: '#806C73',
-    border: '#F2D5DB', danger: '#B84353', shadow: '#D98A9B'
+    key: 'rose', label: 'Rose letters', background: '#FAF4E9', surface: '#FFFCF5', surfaceSoft: '#F3D9D9',
+    primary: '#A44761', primaryPressed: '#793047', accent: '#EAB0AD', ink: '#392632', muted: '#75616B',
+    border: '#DFC9C3', danger: '#A73143', shadow: '#A87880'
   },
   lavender: {
-    key: 'lavender', label: 'Lilac daydream', background: '#FAF8FF', surface: '#FFFFFF', surfaceSoft: '#EEE8FF',
-    primary: '#8471C4', primaryPressed: '#6958A4', accent: '#C9BDF0', ink: '#2F2940', muted: '#716B84',
-    border: '#E2DBF5', danger: '#B84353', shadow: '#9988D4'
+    key: 'lavender', label: 'Lilac daydream', background: '#F5F0E9', surface: '#FFFCF7', surfaceSoft: '#E2D9F0',
+    primary: '#705299', primaryPressed: '#523971', accent: '#BDA8D9', ink: '#35293D', muted: '#716077',
+    border: '#D5C8DD', danger: '#A73143', shadow: '#9E8AAA'
   },
   peach: {
-    key: 'peach', label: 'Peach picnic', background: '#FFFAF6', surface: '#FFFFFF', surfaceSoft: '#FFEBDD',
-    primary: '#C76D4F', primaryPressed: '#A45139', accent: '#F1C29E', ink: '#3C2C27', muted: '#806E66',
-    border: '#F2DECF', danger: '#B84353', shadow: '#D98F6F'
+    key: 'peach', label: 'Peach picnic', background: '#FBF1E3', surface: '#FFFCF4', surfaceSoft: '#F5D9BE',
+    primary: '#9D4F32', primaryPressed: '#763820', accent: '#E8B38D', ink: '#3B2929', muted: '#785F55',
+    border: '#E2CBB4', danger: '#A73143', shadow: '#B68B72'
   },
   mint: {
-    key: 'mint', label: 'Mint meadow', background: '#F6FCF8', surface: '#FFFFFF', surfaceSoft: '#E2F4E9',
-    primary: '#4D8A68', primaryPressed: '#3B6B50', accent: '#A8D7B8', ink: '#24372B', muted: '#68786E',
-    border: '#D6EBDD', danger: '#B84353', shadow: '#75B58D'
+    key: 'mint', label: 'Mint meadow', background: '#F0F3E8', surface: '#FCFDF4', surfaceSoft: '#D6E4CE',
+    primary: '#456849', primaryPressed: '#304B34', accent: '#A9C59C', ink: '#2D332D', muted: '#61715E',
+    border: '#C7D5BD', danger: '#A73143', shadow: '#8DAB81'
   },
   sky: {
-    key: 'sky', label: 'Bluebird', background: '#F6FAFF', surface: '#FFFFFF', surfaceSoft: '#E4F0FF',
-    primary: '#527BAF', primaryPressed: '#3D628F', accent: '#B7D2F0', ink: '#253448', muted: '#68778A',
-    border: '#D8E5F3', danger: '#B84353', shadow: '#83A7D1'
+    key: 'sky', label: 'Blue hour', background: '#EFF2ED', surface: '#FBFCF6', surfaceSoft: '#D7E3E8',
+    primary: '#486780', primaryPressed: '#324B61', accent: '#AAC5D2', ink: '#29323B', muted: '#60707B',
+    border: '#C6D5D9', danger: '#A73143', shadow: '#87A5B3'
   }
 };
 

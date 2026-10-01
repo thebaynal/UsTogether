@@ -1,8 +1,9 @@
-import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
+import { MotionPressable as Pressable, MotionView, motion } from '@/components/Motion';
+import { RomanticFlashcards } from '@/components/RomanticFlashcards';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppButton } from '@/components/AppButton';
-import { BrandHeader } from '@/components/BrandHeader';
 import { Notice } from '@/components/Notice';
 import { Page } from '@/components/Page';
 import { TextField } from '@/components/TextField';
@@ -20,8 +21,13 @@ export default function SignInScreen() {
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const saving = useRef(false);
+  const [formFocused, setFormFocused] = useState(false);
+  const [formHovering, setFormHovering] = useState(false);
+  const [formTouching, setFormTouching] = useState(false);
 
   async function submit() {
+    if (saving.current) return;
     setError(null);
     setInfo(null);
     if (isCreatingAccount && displayName.trim().length < 1) {
@@ -32,6 +38,7 @@ export default function SignInScreen() {
       setError('Use a password with at least 8 characters.');
       return;
     }
+    saving.current = true;
     setIsSaving(true);
     try {
       if (isCreatingAccount) {
@@ -45,43 +52,47 @@ export default function SignInScreen() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Something went wrong. Please try again.');
     } finally {
+      saving.current = false;
       setIsSaving(false);
     }
   }
 
   return (
     <Page palette={palette} contentContainerStyle={styles.page}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.card}>
-        <View style={[styles.flower, { backgroundColor: palette.surfaceSoft }]}><Text style={{ fontSize: 29 }}>✿</Text></View>
-        <BrandHeader
-          palette={palette}
-          eyebrow="UsTogether"
-          title={isCreatingAccount ? 'Make a little space' : 'Come back to your story'}
-          subtitle={isCreatingAccount ? 'Create a private home for the moments you want to keep.' : 'Sign in to see the memories you share.'}
-        />
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.layout}>
+      <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}
+        onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)}
+        onPointerEnter={() => setFormHovering(true)} onPointerLeave={() => setFormHovering(false)}
+        onTouchStart={() => setFormTouching(true)} onTouchEnd={() => setFormTouching(false)} onTouchCancel={() => setFormTouching(false)}>
+        <Text style={[styles.wordmark, { color: palette.primaryPressed }]}>UsTogether ♡</Text>
+        <Text accessibilityRole="header" style={[styles.title, { color: palette.ink }]}>{isCreatingAccount ? 'Create account' : 'Sign in'}</Text>
         <View style={styles.fields}>
-          {isCreatingAccount ? <TextField label="Your name" palette={palette} value={displayName} onChangeText={setDisplayName} autoCapitalize="words" maxLength={60} /> : null}
-          <TextField label="Email" palette={palette} value={email} onChangeText={setEmail} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="emailAddress" />
-          <TextField label="Password" palette={palette} value={password} onChangeText={setPassword} secureTextEntry autoComplete={isCreatingAccount ? 'new-password' : 'password'} textContentType={isCreatingAccount ? 'newPassword' : 'password'} />
+          {isCreatingAccount ? <MotionView duration={motion.content}><TextField label="Your name" palette={palette} value={displayName} onChangeText={setDisplayName} onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)} autoCapitalize="words" maxLength={60} /></MotionView> : null}
+          <TextField label="Email" palette={palette} value={email} onChangeText={setEmail} onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="emailAddress" />
+          <TextField label="Password" palette={palette} value={password} onChangeText={setPassword} onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)} secureTextEntry autoComplete={isCreatingAccount ? 'new-password' : 'password'} textContentType={isCreatingAccount ? 'newPassword' : 'password'} />
           {error ? <Notice palette={palette} tone="error">{error}</Notice> : null}
           {info ? <Notice palette={palette} tone="success">{info}</Notice> : null}
           <AppButton label={isCreatingAccount ? 'Create account' : 'Sign in'} palette={palette} onPress={submit} loading={isSaving} />
         </View>
-        <Pressable accessibilityRole="button" onPress={() => { setIsCreatingAccount((value) => !value); setError(null); setInfo(null); }} style={styles.switch}>
+        <Pressable disabled={isSaving} accessibilityRole="button" onPress={() => { setIsCreatingAccount((value) => !value); setError(null); setInfo(null); }} style={styles.switch}>
           <Text style={[styles.switchText, { color: palette.muted }]}>
             {isCreatingAccount ? 'Already have an account? ' : 'New around here? '}
             <Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>{isCreatingAccount ? 'Sign in' : 'Create one'}</Text>
           </Text>
         </Pressable>
+      </View>
+      <RomanticFlashcards paused={formFocused || formHovering || formTouching || isSaving} />
       </KeyboardAvoidingView>
     </Page>
   );
 }
 
 const styles = StyleSheet.create({
-  page: { flexGrow: 1, justifyContent: 'center', alignItems: 'center' },
-  card: { width: '100%', maxWidth: 480, gap: 8, borderRadius: 28, padding: 28, backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: '#F2D5DB', shadowColor: '#D98A9B', shadowOpacity: 0.1, shadowRadius: 22, shadowOffset: { width: 0, height: 10 } },
-  flower: { width: 54, height: 54, borderRadius: 19, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  page: { flexGrow: 1, justifyContent: 'center', alignItems: 'stretch' },
+  layout: { width: '100%', maxWidth: 480, alignSelf: 'center', gap: 22 },
+  wordmark: { fontSize: 19, fontWeight: '800', letterSpacing: -0.5 },
+  title: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 32, lineHeight: 38, fontWeight: '700', letterSpacing: -0.8, marginBottom: 9 },
+  card: { width: '100%', gap: 14, borderRadius: 30, padding: 24, borderWidth: 1 },
   fields: { gap: 15 },
   switch: { paddingTop: 12, paddingBottom: 4 },
   switchText: { textAlign: 'center', fontSize: 14 }

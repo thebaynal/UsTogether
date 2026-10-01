@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
+import { MotionPressable as Pressable, MotionView } from '@/components/Motion';
 import { useRouter } from 'expo-router';
 import { AppButton } from '@/components/AppButton';
 import { BrandHeader } from '@/components/BrandHeader';
@@ -44,20 +45,20 @@ export default function NewSpaceScreen() {
       <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.back}>
         <Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>‹  All spaces</Text>
       </Pressable>
-      <BrandHeader palette={palette} title="Make a little space" subtitle="Choose who it’s for. Everyone in the space can add and care for its memories." />
+      <BrandHeader palette={palette} eyebrow="A new chapter" title="Make room for your people." subtitle="Name your album, choose who it’s for, and start collecting the good days." />
       <TextField label="Space name" palette={palette} value={name} onChangeText={setName} maxLength={50} placeholder="Sunday hikes, The Parkers…" returnKeyType="done" />
       <Text style={[styles.label, { color: palette.ink }]}>This space is for…</Text>
       <View style={styles.kindList}>
-        {kinds.map((option) => {
+        {kinds.map((option, index) => {
           const optionPalette = getPalette(option, defaultThemeByKind[option]);
           const selected = kind === option;
           return (
-            <Pressable
-              key={option}
+            <MotionView key={option} index={index}>
+            <Pressable disabled={isSaving}
               accessibilityRole="radio"
-              accessibilityState={{ selected }}
+              accessibilityState={{ selected, checked: selected }}
               onPress={() => setKind(option)}
-              style={[styles.kindCard, { backgroundColor: optionPalette.surface, borderColor: selected ? optionPalette.primary : optionPalette.border, borderWidth: selected ? 2 : 1 }]}
+              style={[styles.kindCard, { backgroundColor: selected ? optionPalette.surfaceSoft : optionPalette.surface, borderColor: selected ? optionPalette.primary : optionPalette.border, borderWidth: selected ? 2 : 1 }]}
             >
               <View style={[styles.kindIcon, { backgroundColor: optionPalette.surfaceSoft }]}><Text style={{ color: optionPalette.primaryPressed, fontSize: 19 }}>{option === 'couple' ? '♡' : option === 'team' ? '✦' : '✿'}</Text></View>
               <View style={styles.kindWords}>
@@ -66,6 +67,7 @@ export default function NewSpaceScreen() {
               </View>
               <View style={[styles.radio, { borderColor: selected ? optionPalette.primary : optionPalette.border }]}>{selected ? <View style={[styles.radioDot, { backgroundColor: optionPalette.primary }]} /> : null}</View>
             </Pressable>
+            </MotionView>
           );
         })}
       </View>
@@ -84,7 +86,7 @@ const styles = StyleSheet.create({
   back: { alignSelf: 'flex-start', paddingVertical: 8, marginBottom: 18 },
   label: { fontSize: 14, fontWeight: '800', marginTop: 22, marginBottom: 10 },
   kindList: { gap: 10 },
-  kindCard: { minHeight: 80, borderRadius: 19, padding: 13, flexDirection: 'row', alignItems: 'center', gap: 12 },
+  kindCard: { minHeight: 108, borderRadius: 26, padding: 20, flexDirection: 'row', alignItems: 'center', gap: 16 },
   kindIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   kindWords: { flex: 1, gap: 4 },
   kindTitle: { fontSize: 15, fontWeight: '800' },

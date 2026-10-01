@@ -1,0 +1,8 @@
+.git
+.vercel
+.tmp
+**/node_modules
+**/.expo
+**/.env*
+client/dist
+UsTogether.docx

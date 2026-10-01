@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { MotionPressable as Pressable, MotionView, motion } from '@/components/Motion';
+import { useSpaceTheme } from '@/features/spaces/useSpaceTheme';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppButton } from '@/components/AppButton';
@@ -14,7 +16,7 @@ import { getSpace } from '@/features/spaces/spaceService';
 import type { ImageMimeType } from '@/types/domain';
 import { getPalette, palettes } from '@/theme/palettes';
 
-type SelectedImage = { uri: string; fileName: string; mimeType: ImageMimeType; fileSize?: number | null };
+type SelectedImage = { uri: string; fileName: string; mimeType: ImageMimeType; fileSize?: number | null; file?: File };
 
 function localDate() {
   const now = new Date();
@@ -35,7 +37,10 @@ export default function NewMemoryScreen() {
   const [milestoneTag, setMilestoneTag] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const palette = getPalette(spaceKind, themeKey);
+  const saving = useRef(false);
+  const [saved, setSaved] = useState(false);
+  const savedTheme = useSpaceTheme(spaceId, themeKey);
+  const palette = getPalette(spaceKind, savedTheme);
 
   useEffect(() => {
     let active = true;
@@ -46,25 +51,29 @@ export default function NewMemoryScreen() {
   }, [spaceId]);
 
   async function chooseImage() {
+    if (saving.current) return;
     setError(null);
+    try {
+    if (Platform.OS !== 'web') {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       setError('Allow photo library access to add a memory.');
       return;
     }
+    }
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      allowsEditing: true,
+      allowsEditing: Platform.OS !== 'web',
       aspect: [1, 1],
       quality: 0.9
     });
     if (result.canceled) return;
 
     const asset = result.assets[0];
-    try {
+    if (!asset) throw new Error('No photo was selected. Please choose it again.');
       const fileName = asset.fileName ?? `memory.${asset.mimeType?.split('/')[1] ?? 'jpg'}`;
-      const mimeType = validateImageSelection({ mimeType: asset.mimeType, fileName, fileSize: asset.fileSize });
-      setImage({ uri: asset.uri, fileName, mimeType, fileSize: asset.fileSize });
+      const mimeType = validateImageSelection({ mimeType: asset.file?.type || asset.mimeType, fileName, fileSize: asset.file?.size ?? asset.fileSize });
+      setImage({ uri: asset.uri, fileName, mimeType, fileSize: asset.file?.size ?? asset.fileSize, file: asset.file });
     } catch (cause) {
       setImage(null);
       setError(cause instanceof Error ? cause.message : 'Choose a JPEG, PNG, or WebP image.');
@@ -72,19 +81,23 @@ export default function NewMemoryScreen() {
   }
 
   async function submit() {
+    if (saving.current || saved) return;
     if (!user) { setError('Sign in again before adding a memory.'); return; }
     if (!image) { setError('Choose a photo to add to this memory.'); return; }
     if (!title.trim()) { setError('Add a title for this moment.'); return; }
     if (!isValidMemoryDate(date)) { setError('Enter a real date in YYYY-MM-DD format.'); return; }
 
     setError(null);
+    saving.current = true;
     setIsSaving(true);
     try {
-      await createMemory({ spaceId, userId: user.id, title, date, caption, milestoneTag, image });
-      router.back();
+      const memory = await createMemory({ spaceId, userId: user.id, title, date, caption, milestoneTag, image });
+      setSaved(true);
+      if (!memory.imageUrl) setError('Your memory is saved. Its photo preview could not load yet; reopen the timeline to retry.');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Your memory could not be saved.');
     } finally {
+      saving.current = false;
       setIsSaving(false);
     }
   }
@@ -94,10 +107,17 @@ export default function NewMemoryScreen() {
       <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.back}>
         <Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>‹  Back to timeline</Text>
       </Pressable>
-      <BrandHeader palette={palette} title="Add a memory" subtitle="A photo, a date, and a few words are plenty." />
+      <BrandHeader palette={palette} eyebrow="A page in your story" title="Keep this moment." subtitle="A photo, a date, and the little details you never want to forget." />
 
-      <Pressable accessibilityRole="button" accessibilityLabel="Choose a photo" onPress={() => void chooseImage()} style={[styles.photoPicker, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
-        {image ? <Image source={{ uri: image.uri }} resizeMode="cover" style={styles.preview} /> : (
+      {saved ? <MotionView duration={motion.content} style={[styles.saved, { backgroundColor: palette.surfaceSoft }]}>
+        <Text style={{ color: palette.primaryPressed, fontSize: 28 }}>♡</Text>
+        <Text style={{ color: palette.ink, fontSize: 20, fontWeight: '800' }}>A moment, kept forever.</Text>
+        {error ? <Notice palette={palette}>{error}</Notice> : null}
+        <AppButton label="Back to your timeline" palette={palette} onPress={() => router.dismissTo(`/spaces/${spaceId}`)} />
+      </MotionView> : <>
+
+      <Pressable disabled={isSaving} accessibilityRole="button" accessibilityLabel="Choose a photo" onPress={() => void chooseImage()} style={[styles.photoPicker, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+        {image ? <MotionView key={image.uri} duration={motion.content} style={styles.preview}><Image source={{ uri: image.uri }} resizeMode="cover" style={styles.preview} /></MotionView> : (
           <View style={styles.photoPrompt}>
             <Text style={[styles.photoIcon, { color: palette.primaryPressed }]}>＋</Text>
             <Text style={[styles.photoTitle, { color: palette.ink }]}>Choose a photo</Text>
@@ -105,7 +125,7 @@ export default function NewMemoryScreen() {
           </View>
         )}
       </Pressable>
-      {image ? <Pressable accessibilityRole="button" onPress={() => void chooseImage()} style={styles.changePhoto}><Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>Change photo</Text></Pressable> : null}
+      {image ? <Pressable disabled={isSaving} accessibilityRole="button" onPress={() => void chooseImage()} style={styles.changePhoto}><Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>Change photo</Text></Pressable> : null}
 
       <View style={styles.form}>
         <TextField label="Title" palette={palette} value={title} onChangeText={setTitle} maxLength={50} placeholder="The day we found the little bakery" />
@@ -115,11 +135,13 @@ export default function NewMemoryScreen() {
         {error ? <Notice palette={palette} tone="error">{error}</Notice> : null}
         <AppButton label="Save memory" palette={palette} onPress={() => void submit()} loading={isSaving} />
       </View>
+      </>}
     </Page>
   );
 }
 
 const styles = StyleSheet.create({
+  saved: { padding: 28, borderRadius: 30, gap: 18 },
   back: { alignSelf: 'flex-start', paddingVertical: 8, marginBottom: 16 },
   photoPicker: { height: 235, borderWidth: 1, borderStyle: 'dashed', borderRadius: 24, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   photoPrompt: { alignItems: 'center', gap: 6 },

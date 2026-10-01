@@ -4,6 +4,7 @@ import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { BrandHeader } from '@/components/BrandHeader';
 import { Notice } from '@/components/Notice';
 import { Page } from '@/components/Page';
+import { RomanticMark } from '@/components/RomanticMark';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { acceptInvite } from '@/features/spaces/spaceService';
 import { palettes } from '@/theme/palettes';
@@ -26,8 +27,8 @@ export default function InviteScreen() {
   if (!isLoading && !user) return <Redirect href={`/sign-in?inviteToken=${encodeURIComponent(token ?? '')}`} />;
   return (
     <Page palette={palettes.rose}>
-      <View style={styles.content}>
-        <Text style={styles.flower}>✿</Text>
+      <View style={[styles.content, { backgroundColor: palettes.rose.surfaceSoft, borderColor: palettes.rose.border }]}>
+        <RomanticMark palette={palettes.rose} />
         <BrandHeader palette={palettes.rose} title={error ? 'This invite needs a fresh start' : 'You’re almost there'} subtitle={error ? 'Ask a member for a new invite link.' : 'Joining your shared space…'} />
         {error ? <Notice palette={palettes.rose} tone="error">{error}</Notice> : <ActivityIndicator color={palettes.rose.primary} />}
       </View>
@@ -35,4 +36,4 @@ export default function InviteScreen() {
   );
 }
 
-const styles = StyleSheet.create({ content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }, flower: { fontSize: 38, marginBottom: 15 } });
+const styles = StyleSheet.create({ content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, borderRadius: 32, borderWidth: 1, gap: 18 }, flower: { fontSize: 38, marginBottom: 15 } });

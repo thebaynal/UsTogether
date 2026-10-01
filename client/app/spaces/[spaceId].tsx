@@ -1,7 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Platform, Pressable, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Image, Platform, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { MotionPressable as Pressable, MotionView, motion } from '@/components/Motion';
+import { RomanticMark } from '@/components/RomanticMark';
+import { useSpaceTheme } from '@/features/spaces/useSpaceTheme';
 import * as Clipboard from 'expo-clipboard';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { AppButton } from '@/components/AppButton';
 import { Notice } from '@/components/Notice';
 import { Page } from '@/components/Page';
@@ -26,44 +29,50 @@ export default function TimelineScreen() {
   const [notice, setNotice] = useState<string | null>(null);
   const [pendingExit, setPendingExit] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
+  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const active = useRef(false);
+  const request = useRef(0);
 
-  const palette = space ? getPalette(space.kind, space.themeKey) : palettes.rose;
+  const themeKey = useSpaceTheme(spaceId, space?.themeKey ?? null);
+  const palette = getPalette(space?.kind ?? 'couple', themeKey);
   const cardWidth = Math.max(270, Math.min(width - 52, 370));
+  const visibleCards = Math.max(1, Math.ceil((Math.min(width, 1120) - 48) / (cardWidth + 15)));
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
+    if (!active.current) return;
+    const revision = ++request.current;
     try {
-      const [nextSpace, nextMemories] = await Promise.all([getSpace(spaceId), listMemories(spaceId)]);
-      setSpace(nextSpace);
-      setMemories(nextMemories);
+      const [nextSpace, nextMemories] = await Promise.allSettled([getSpace(spaceId), listMemories(spaceId)]);
+      if (!active.current || revision !== request.current) return;
+      if (nextSpace.status === 'fulfilled') setSpace(nextSpace.value);
+      if (nextMemories.status === 'fulfilled') { setMemories(nextMemories.value); setFailedImages({}); }
+      if (nextSpace.status === 'rejected') throw nextSpace.reason;
+      if (nextMemories.status === 'rejected') throw nextMemories.reason;
       setError(null);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'This space could not be loaded.');
+      if (active.current && revision === request.current) setError(cause instanceof Error ? cause.message : 'This space could not be loaded.');
     } finally {
-      setIsLoading(false);
+      if (active.current && revision === request.current) setIsLoading(false);
     }
-  }
+  }, [spaceId]);
+
+  useFocusEffect(useCallback(() => {
+    active.current = true;
+    void refresh();
+    return () => { active.current = false; request.current++; };
+  }, [refresh]));
 
   useEffect(() => {
-    let active = true;
-    void Promise.all([getSpace(spaceId), listMemories(spaceId)])
-      .then(([nextSpace, nextMemories]) => {
-        if (!active) return;
-        setSpace(nextSpace);
-        setMemories(nextMemories);
-      })
-      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'This space could not be loaded.'); })
-      .finally(() => { if (active) setIsLoading(false); });
-
     const client = requireSupabase();
-    const channel = client.channel(`space:${spaceId}:timeline`)
+    const channel = client.channel(`space:${spaceId}:timeline:${Date.now()}:${Math.random()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'memories', filter: `space_id=eq.${spaceId}` }, () => { void refresh(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'spaces', filter: `id=eq.${spaceId}` }, () => { void refresh(); })
       .subscribe();
 
     return () => {
-      active = false;
       void client.removeChannel(channel);
     };
-  }, [spaceId]);
+  }, [spaceId, refresh]);
 
   async function shareInvite() {
     setIsSharing(true);
@@ -111,13 +120,13 @@ export default function TimelineScreen() {
         </Pressable>
       </View>
 
-      <View style={styles.headingRow}>
+      <View style={[styles.headingRow, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
         <View style={styles.headingCopy}>
-          <Text style={[styles.kindLabel, { color: palette.primaryPressed }]}>{space ? spaceKindLabels[space.kind] : 'Shared space'}</Text>
+          <Text style={[styles.kindLabel, { color: palette.primaryPressed }]}>{space ? spaceKindLabels[space.kind] : 'Shared space'} / OUR LITTLE ALBUM</Text>
           <Text accessibilityRole="header" style={[styles.title, { color: palette.ink }]}>{space?.name ?? 'Your timeline'}</Text>
           <Text style={[styles.subtitle, { color: palette.muted }]}>{space?.memberCount ?? '—'} {space?.memberCount === 1 ? 'member' : 'members'} · {memoryCountLabel}</Text>
         </View>
-        <Text style={styles.heart}>♡</Text>
+        <RomanticMark palette={palette} size={64} />
       </View>
 
       <View style={styles.actionRow}>
@@ -156,15 +165,15 @@ export default function TimelineScreen() {
             contentContainerStyle={styles.timelineTrack}
           >
             {memories.map((memory, index) => (
+              <MotionView key={memory.id} index={index < visibleCards ? index : 0} duration={index < visibleCards ? motion.entrance : 0}>
               <Pressable
-                key={memory.id}
                 accessibilityRole="button"
                 accessibilityLabel={`${memory.title}, ${formatMemoryDate(memory.date)}. Open memory.`}
                 onPress={() => router.push(`/memories/${memory.id}?spaceId=${spaceId}`)}
                 style={({ pressed }) => [styles.memoryCard, { width: cardWidth, backgroundColor: palette.surface, borderColor: palette.border, opacity: pressed ? 0.9 : 1 }]}
               >
                 <View style={[styles.imageFrame, { backgroundColor: palette.surfaceSoft }]}>
-                  {memory.imageUrl ? <Image source={{ uri: memory.imageUrl }} style={styles.photo} resizeMode="cover" accessibilityLabel={memory.title} /> : <Text style={{ color: palette.muted }}>Photo preview expired. Reopen timeline.</Text>}
+                  {memory.imageUrl && !failedImages[memory.id] ? <Image source={{ uri: memory.imageUrl }} style={styles.photo} resizeMode="cover" accessibilityLabel={memory.title} onError={() => setFailedImages((current) => ({ ...current, [memory.id]: true }))} /> : <Pressable accessibilityRole="button" accessibilityLabel="Reload photo previews" onPress={() => void refresh()} style={{ padding: 24 }}><Text style={{ color: palette.primaryPressed, textAlign: 'center' }}>Photo preview unavailable. Tap to reload.</Text></Pressable>}
                 </View>
                 <View style={styles.memoryText}>
                   <View style={styles.memoryMeta}>
@@ -176,6 +185,7 @@ export default function TimelineScreen() {
                   {memory.caption ? <Text style={[styles.caption, { color: palette.muted }]} numberOfLines={2}>{memory.caption}</Text> : null}
                 </View>
               </Pressable>
+              </MotionView>
             ))}
           </ScrollView>
           <View style={styles.axisWrap}>
@@ -192,13 +202,13 @@ export default function TimelineScreen() {
             <Text style={[styles.leaveText, { color: palette.primaryPressed }]}>{space?.memberCount === 1 ? 'Delete space' : 'Leave space'}</Text>
           </Pressable>
         ) : (
-          <View style={styles.exitConfirm}>
+          <MotionView duration={motion.content} style={styles.exitConfirm}>
             <Text style={[styles.membershipText, { color: palette.ink }]}>{space?.memberCount === 1 ? 'This removes the space and its memories.' : 'You’ll lose access to this timeline.'}</Text>
             <View style={styles.exitButtons}>
               <AppButton label="Cancel" palette={palette} variant="outline" compact onPress={() => setPendingExit(false)} />
               <AppButton label={space?.memberCount === 1 ? 'Delete' : 'Leave'} palette={palette} variant="danger" compact loading={isExiting} onPress={() => void confirmExit()} />
             </View>
-          </View>
+          </MotionView>
         )}
       </View>
     </Page>
@@ -208,11 +218,11 @@ export default function TimelineScreen() {
 const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
   back: { paddingVertical: 8, paddingRight: 14 },
-  themeButton: { height: 42, width: 42, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 18 },
+  themeButton: { height: 48, width: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
+  headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 18, padding: 24, borderRadius: 32, borderWidth: 1 },
   headingCopy: { flex: 1, gap: 5 },
   kindLabel: { textTransform: 'uppercase', fontSize: 11, letterSpacing: 1.5, fontWeight: '900' },
-  title: { fontSize: 30, lineHeight: 36, fontWeight: '900', letterSpacing: -0.7 },
+  title: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -1 },
   subtitle: { fontSize: 14, fontWeight: '600' },
   heart: { fontSize: 36, transform: [{ rotate: '-10deg' }] },
   actionRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
@@ -228,14 +238,14 @@ const styles = StyleSheet.create({
   timelineLabel: { fontSize: 18, fontWeight: '900' },
   swipeHint: { fontSize: 12, fontWeight: '700' },
   timelineTrack: { gap: 15, paddingHorizontal: 1, paddingBottom: 12 },
-  memoryCard: { borderRadius: 25, borderWidth: 1, padding: 10, overflow: 'hidden', shadowColor: '#4E4550', shadowOpacity: 0.08, shadowRadius: 16, shadowOffset: { width: 0, height: 7 } },
+  memoryCard: { borderRadius: 30, borderWidth: 1, padding: 12, overflow: 'hidden' },
   imageFrame: { width: '100%', aspectRatio: 1.04, borderRadius: 18, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   photo: { width: '100%', height: '100%' },
   memoryText: { paddingHorizontal: 7, paddingTop: 13, paddingBottom: 9, gap: 7 },
   memoryMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   memoryDate: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '900' },
   timelineNumber: { fontSize: 11, fontWeight: '700' },
-  memoryTitle: { fontSize: 20, lineHeight: 26, fontWeight: '900' },
+  memoryTitle: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 24, lineHeight: 30, fontWeight: '700' },
   tag: { alignSelf: 'flex-start', overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9, fontSize: 11, fontWeight: '800' },
   caption: { fontSize: 13, lineHeight: 19 },
   axisWrap: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', height: 16, marginTop: 8, marginHorizontal: 14 },

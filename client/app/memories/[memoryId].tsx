@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { MotionPressable as Pressable, MotionView, motion } from '@/components/Motion';
+import { useSpaceTheme } from '@/features/spaces/useSpaceTheme';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppButton } from '@/components/AppButton';
 import { BrandHeader } from '@/components/BrandHeader';
@@ -33,8 +35,10 @@ export default function MemoryDetailScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [photoFailed, setPhotoFailed] = useState(false);
 
-  const palette = space ? getPalette(space.kind, space.themeKey) : palettes.rose;
+  const themeKey = useSpaceTheme(spaceId, space?.themeKey ?? null);
+  const palette = getPalette(space?.kind ?? 'couple', themeKey);
   const myReaction = reactions.find((reaction) => reaction.userId === user?.id)?.emoji;
   const counts = useMemo(() => {
     const values = new Map<string, number>();
@@ -63,9 +67,10 @@ export default function MemoryDetailScreen() {
       .finally(() => { if (active) setIsLoading(false); });
 
     const client = requireSupabase();
-    const channel = client.channel(`memory:${memoryId}:discussion`)
+    const channel = client.channel(`memory:${memoryId}:discussion:${Date.now()}:${Math.random()}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'comments', filter: `memory_id=eq.${memoryId}` }, () => { void refreshDiscussion(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reactions', filter: `memory_id=eq.${memoryId}` }, () => { void refreshDiscussion(); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'spaces', filter: `id=eq.${spaceId}` }, () => { void getSpace(spaceId).then(setSpace).catch((cause) => setError(cause.message)); })
       .subscribe();
 
     return () => { active = false; void client.removeChannel(channel); };
@@ -142,7 +147,7 @@ export default function MemoryDetailScreen() {
       {memory ? (
         <>
           <View style={[styles.heroCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-            <Image source={{ uri: memory.imageUrl }} style={styles.photo} resizeMode="cover" accessibilityLabel={memory.title} />
+            {memory.imageUrl && !photoFailed ? <Image source={{ uri: memory.imageUrl }} style={[styles.photo, { backgroundColor: palette.surfaceSoft }]} resizeMode="cover" accessibilityLabel={memory.title} onError={() => setPhotoFailed(true)} /> : <View style={[styles.photo, { backgroundColor: palette.surfaceSoft, justifyContent: 'center', padding: 24 }]}><Notice palette={palette}>Your memory is saved, but the photo preview is unavailable. Reopen this memory to retry.</Notice></View>}
             <View style={styles.memoryWords}>
               {!isEditingMemory ? (
                 <>
@@ -153,14 +158,14 @@ export default function MemoryDetailScreen() {
                   <Pressable accessibilityRole="button" onPress={() => setIsEditingMemory(true)} style={styles.editMemoryButton}><Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>Edit memory</Text></Pressable>
                 </>
               ) : (
-                <View style={styles.editFields}>
+                <MotionView duration={motion.content} style={styles.editFields}>
                   <TextField label="Title" palette={palette} value={editForm.title} onChangeText={(title) => setEditForm((current) => ({ ...current, title }))} maxLength={50} />
                   <TextField label="Date · YYYY-MM-DD" palette={palette} value={editForm.date} onChangeText={(date) => setEditForm((current) => ({ ...current, date }))} maxLength={10} />
                   <TextField label="Milestone tag · optional" palette={palette} value={editForm.milestoneTag} onChangeText={(milestoneTag) => setEditForm((current) => ({ ...current, milestoneTag }))} maxLength={40} />
                   <TextField label="A few words · optional" palette={palette} value={editForm.caption} onChangeText={(caption) => setEditForm((current) => ({ ...current, caption }))} maxLength={250} multiline />
                   <AppButton label="Save changes" palette={palette} onPress={() => void saveMemoryEdit()} loading={isSaving} />
                   <AppButton label="Cancel" palette={palette} variant="outline" compact onPress={() => { setIsEditingMemory(false); setEditForm({ title: memory.title, date: memory.date, caption: memory.caption ?? '', milestoneTag: memory.milestoneTag ?? '' }); }} />
-                </View>
+                </MotionView>
               )}
             </View>
           </View>
@@ -228,13 +233,13 @@ export default function MemoryDetailScreen() {
             {!confirmDelete ? (
               <Pressable accessibilityRole="button" onPress={() => setConfirmDelete(true)} style={styles.deleteButton}><Text style={{ color: palette.danger, fontWeight: '800' }}>Delete this memory</Text></Pressable>
             ) : (
-              <View style={styles.deleteConfirm}>
+              <MotionView duration={motion.content} style={styles.deleteConfirm}>
                 <Text style={{ color: palette.ink, fontSize: 14, fontWeight: '700' }}>Delete this memory and its photo?</Text>
                 <View style={styles.deleteActions}>
                   <AppButton label="Keep it" palette={palette} variant="outline" compact onPress={() => setConfirmDelete(false)} />
                   <AppButton label="Delete memory" palette={palette} variant="danger" compact loading={isSaving} onPress={() => void confirmMemoryDelete()} />
                 </View>
-              </View>
+              </MotionView>
             )}
           </View> : null}
         </>
@@ -247,18 +252,18 @@ const styles = StyleSheet.create({
   back: { alignSelf: 'flex-start', paddingVertical: 8, marginBottom: 15 },
   loading: { marginTop: 35 },
   notice: { marginBottom: 14 },
-  heroCard: { borderRadius: 27, borderWidth: 1, padding: 10, overflow: 'hidden' },
-  photo: { width: '100%', aspectRatio: 1, borderRadius: 19, backgroundColor: '#F4E9EF' },
-  memoryWords: { padding: 14, gap: 9 },
+  heroCard: { borderRadius: 32, borderWidth: 1, padding: 12, overflow: 'hidden', maxWidth: 760, width: '100%', alignSelf: 'center' },
+  photo: { width: '100%', aspectRatio: 1.1, borderRadius: 24 },
+  memoryWords: { padding: 20, gap: 12 },
   editFields: { gap: 13 },
   editMemoryButton: { alignSelf: 'flex-start', paddingVertical: 7 },
   date: { textTransform: 'uppercase', letterSpacing: 1, fontSize: 12, fontWeight: '900' },
-  title: { fontSize: 25, lineHeight: 32, fontWeight: '900' },
+  title: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 32, lineHeight: 39, fontWeight: '700', letterSpacing: -0.8 },
   tag: { alignSelf: 'flex-start', borderRadius: 10, overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 5, fontSize: 12, fontWeight: '800' },
   caption: { fontSize: 15, lineHeight: 23 },
   discussionSection: { marginTop: 29 },
-  reactionRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 6, marginBottom: 24 },
-  reaction: { flex: 1, minHeight: 55, borderWidth: 1, borderRadius: 17, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 4 },
+  reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
+  reaction: { flexGrow: 1, minWidth: 64, minHeight: 52, borderWidth: 1, borderRadius: 28, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
   emoji: { fontSize: 18 },
   reactionCount: { fontSize: 12, fontWeight: '800' },
   commentComposer: { gap: 10 },

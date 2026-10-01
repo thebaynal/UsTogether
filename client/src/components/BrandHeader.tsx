@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import type { Palette } from '@/theme/palettes';
 
 export function BrandHeader({ palette, eyebrow = 'A little place for your story', title, subtitle }: {
@@ -6,7 +6,7 @@ export function BrandHeader({ palette, eyebrow = 'A little place for your story'
 }) {
   return (
     <View style={styles.wrap}>
-      <Text style={[styles.eyebrow, { color: palette.primaryPressed }]}>{eyebrow}</Text>
+      <View style={styles.kicker}><View style={[styles.dot, { backgroundColor: palette.primary }]} /><Text style={[styles.eyebrow, { color: palette.primaryPressed }]}>{eyebrow}</Text></View>
       <Text accessibilityRole="header" style={[styles.title, { color: palette.ink }]}>{title}</Text>
       {subtitle ? <Text style={[styles.subtitle, { color: palette.muted }]}>{subtitle}</Text> : null}
     </View>
@@ -14,8 +14,10 @@ export function BrandHeader({ palette, eyebrow = 'A little place for your story'
 }
 
 const styles = StyleSheet.create({
-  wrap: { gap: 8, marginBottom: 22 },
-  eyebrow: { fontSize: 12, letterSpacing: 1.5, textTransform: 'uppercase', fontWeight: '800' },
-  title: { fontSize: 30, lineHeight: 37, fontWeight: '800', letterSpacing: -0.7 },
-  subtitle: { fontSize: 15, lineHeight: 22, maxWidth: 620 }
+  wrap: { gap: 12, marginBottom: 30 },
+  kicker: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dot: { height: 7, width: 7, borderRadius: 4 },
+  eyebrow: { fontSize: 11, letterSpacing: 1.8, textTransform: 'uppercase', fontWeight: '800' },
+  title: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 38, lineHeight: 44, fontWeight: '700', letterSpacing: -1.2 },
+  subtitle: { fontSize: 15, lineHeight: 24, maxWidth: 560 }
 });
