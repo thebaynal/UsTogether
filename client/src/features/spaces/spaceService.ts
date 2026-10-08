@@ -4,6 +4,7 @@ import type { Space, SpaceKind, SpaceMember, ThemeKey } from '@/types/domain';
 import { requireSupabase } from '@/lib/supabase';
 import { saveSpaceTheme } from './themeService';
 import { beginThemeRead, rememberSpaceTheme } from './themeCache';
+import { deleteSpaceSafely } from './spaceDeletion';
 
 type SpaceRow = {
   id: string;
@@ -47,6 +48,9 @@ export async function getSpace(spaceId: string): Promise<Space> {
     client.from('spaces').select('id,name,kind,theme_key,created_at').eq('id', spaceId).single(),
     client.from('space_members').select('user_id', { count: 'exact', head: true }).eq('space_id', spaceId)
   ]);
+  if (error?.code === 'PGRST116' || (!error && !row)) {
+    throw new Error('This album is unavailable. Ask a member for an invite, or return to your albums.');
+  }
   raise(error);
   raise(countError);
   rememberSpaceTheme(spaceId, (row as SpaceRow).theme_key, revision);
@@ -114,17 +118,5 @@ export async function leaveSpace(spaceId: string) {
 }
 
 export async function deleteSpace(spaceId: string) {
-  const client = requireSupabase();
-  const { data: memories, error: memoriesError } = await client
-    .from('memories').select('image_path').eq('space_id', spaceId);
-  raise(memoriesError);
-
-  const paths = (memories ?? []).map((memory) => memory.image_path);
-  if (paths.length) {
-    const { error: storageError } = await client.storage.from('memory-images').remove(paths);
-    raise(storageError);
-  }
-
-  const { error } = await client.rpc('delete_space', { p_space_id: spaceId });
-  raise(error);
+  return deleteSpaceSafely(requireSupabase(), spaceId);
 }

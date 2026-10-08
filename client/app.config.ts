@@ -8,6 +8,7 @@ const config: ExpoConfig = {
   slug: 'ustogether',
   scheme: 'ustogether',
   version: '1.0.0',
+  icon: './assets/brand/app-icon.png',
   orientation: 'portrait',
   userInterfaceStyle: 'light',
   experiments: { typedRoutes: true },
@@ -32,7 +33,7 @@ const config: ExpoConfig = {
       category: ['BROWSABLE', 'DEFAULT']
     }] : []
   },
-  web: { bundler: 'metro', output: 'single' }
+  web: { bundler: 'metro', output: 'single', favicon: './assets/brand/favicon.png' }
 };
 
 export default config;

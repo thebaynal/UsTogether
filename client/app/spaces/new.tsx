@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { MotionPressable as Pressable, MotionView } from '@/components/Motion';
 import { useRouter } from 'expo-router';
@@ -7,9 +7,10 @@ import { BrandHeader } from '@/components/BrandHeader';
 import { Notice } from '@/components/Notice';
 import { Page } from '@/components/Page';
 import { TextField } from '@/components/TextField';
+import { PaperPanel } from '@/components/PaperPanel';
 import { createSpace } from '@/features/spaces/spaceService';
 import type { SpaceKind } from '@/types/domain';
-import { defaultThemeByKind, getPalette, palettes, spaceKindLabels } from '@/theme/palettes';
+import { defaultThemeByKind, getPalette, spaceKindLabels } from '@/theme/palettes';
 
 const kinds: SpaceKind[] = ['couple', 'group', 'team'];
 const littleNotes: Record<SpaceKind, string> = {
@@ -24,29 +25,34 @@ export default function NewSpaceScreen() {
   const [kind, setKind] = useState<SpaceKind>('couple');
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const saving = useRef(false);
   const palette = getPalette(kind, null);
 
   async function submit() {
+    if (saving.current) return;
     if (!name.trim()) { setError('Give your space a name first.'); return; }
     setError(null);
     setIsSaving(true);
+    saving.current = true;
     try {
       const id = await createSpace(name, kind);
       router.replace(`/spaces/${id}`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Your space could not be created.');
     } finally {
+      saving.current = false;
       setIsSaving(false);
     }
   }
 
   return (
-    <Page palette={palette}>
-      <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.back}>
+    <Page palette={palette} layout="form">
+      <Pressable accessibilityRole="button" accessibilityLabel="Back to all spaces" onPress={() => router.back()} style={styles.back}>
         <Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>‹  All spaces</Text>
       </Pressable>
       <BrandHeader palette={palette} eyebrow="A new chapter" title="Make room for your people." subtitle="Name your album, choose who it’s for, and start collecting the good days." />
-      <TextField label="Space name" palette={palette} value={name} onChangeText={setName} maxLength={50} placeholder="Sunday hikes, The Parkers…" returnKeyType="done" />
+      <PaperPanel palette={palette}>
+      <TextField label="Space name" palette={palette} value={name} editable={!isSaving} onChangeText={setName} maxLength={50} placeholder="Sunday hikes, The Parkers…" returnKeyType="done" />
       <Text style={[styles.label, { color: palette.ink }]}>This space is for…</Text>
       <View style={styles.kindList}>
         {kinds.map((option, index) => {
@@ -56,9 +62,10 @@ export default function NewSpaceScreen() {
             <MotionView key={option} index={index}>
             <Pressable disabled={isSaving}
               accessibilityRole="radio"
+              accessibilityLabel={`${spaceKindLabels[option]}. ${littleNotes[option]}`}
               accessibilityState={{ selected, checked: selected }}
               onPress={() => setKind(option)}
-              style={[styles.kindCard, { backgroundColor: selected ? optionPalette.surfaceSoft : optionPalette.surface, borderColor: selected ? optionPalette.primary : optionPalette.border, borderWidth: selected ? 2 : 1 }]}
+              style={[styles.kindCard, { backgroundColor: selected ? optionPalette.surfaceSoft : optionPalette.surface, borderColor: selected ? optionPalette.primary : optionPalette.border }]}
             >
               <View style={[styles.kindIcon, { backgroundColor: optionPalette.surfaceSoft }]}><Text style={{ color: optionPalette.primaryPressed, fontSize: 19 }}>{option === 'couple' ? '♡' : option === 'team' ? '✦' : '✿'}</Text></View>
               <View style={styles.kindWords}>
@@ -78,15 +85,16 @@ export default function NewSpaceScreen() {
       </View>
       {error ? <View style={styles.error}><Notice palette={palette} tone="error">{error}</Notice></View> : null}
       <View style={styles.submit}><AppButton label="Create space" palette={palette} onPress={() => void submit()} loading={isSaving} /></View>
+      </PaperPanel>
     </Page>
   );
 }
 
 const styles = StyleSheet.create({
-  back: { alignSelf: 'flex-start', paddingVertical: 8, marginBottom: 18 },
+  back: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingRight: 12, marginBottom: 18, borderRadius: 22 },
   label: { fontSize: 14, fontWeight: '800', marginTop: 22, marginBottom: 10 },
   kindList: { gap: 10 },
-  kindCard: { minHeight: 108, borderRadius: 26, padding: 20, flexDirection: 'row', alignItems: 'center', gap: 16 },
+  kindCard: { minHeight: 108, borderRadius: 22, borderWidth: 2, padding: 16, flexDirection: 'row', alignItems: 'center', gap: 12 },
   kindIcon: { width: 44, height: 44, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   kindWords: { flex: 1, gap: 4 },
   kindTitle: { fontSize: 15, fontWeight: '800' },

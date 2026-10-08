@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Platform, StyleSheet, Text, View } from 'react-native';
+import { Image, Platform, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { MotionPressable as Pressable, MotionView, motion } from '@/components/Motion';
 import { useSpaceTheme } from '@/features/spaces/useSpaceTheme';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -8,13 +8,15 @@ import { BrandHeader } from '@/components/BrandHeader';
 import { Notice } from '@/components/Notice';
 import { Page } from '@/components/Page';
 import { TextField } from '@/components/TextField';
+import { PaperPanel } from '@/components/PaperPanel';
+import { LoadingState } from '@/components/LoadingState';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { addComment, listDiscussion, removeComment, toggleReaction, updateComment } from '@/features/comments/discussionService';
 import { deleteMemory, getMemory, updateMemory } from '@/features/memories/memoryService';
 import { formatMemoryDate, isValidMemoryDate } from '@/features/memories/logic';
 import { getSpace } from '@/features/spaces/spaceService';
 import type { Comment, Memory, Reaction, Space } from '@/types/domain';
-import { getPalette, palettes } from '@/theme/palettes';
+import { getPalette } from '@/theme/palettes';
 import { requireSupabase } from '@/lib/supabase';
 
 const emojiOptions = ['💛', '❤️', '🥹', '😂', '✨', '🙌'];
@@ -23,6 +25,7 @@ export default function MemoryDetailScreen() {
   const { memoryId, spaceId } = useLocalSearchParams<{ memoryId: string; spaceId: string }>();
   const router = useRouter();
   const { user } = useAuth();
+  const { width } = useWindowDimensions();
   const [memory, setMemory] = useState<Memory | null>(null);
   const [space, setSpace] = useState<Space | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -140,22 +143,24 @@ export default function MemoryDetailScreen() {
   }
 
   return (
-    <Page palette={palette}>
-      <Pressable accessibilityRole="button" onPress={() => router.back()} style={styles.back}><Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>‹  Back to timeline</Text></Pressable>
-      {isLoading ? <ActivityIndicator color={palette.primary} style={styles.loading} /> : null}
+    <Page palette={palette} layout="reading">
+      <Pressable accessibilityRole="button" accessibilityLabel="Back to timeline" onPress={() => router.back()} style={styles.back}><Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>‹  Back to timeline</Text></Pressable>
+      {isLoading ? <LoadingState palette={palette} label="Opening this little moment…" /> : null}
       {error ? <View style={styles.notice}><Notice palette={palette} tone="error">{error}</Notice></View> : null}
       {memory ? (
         <>
           <View style={[styles.heroCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-            {memory.imageUrl && !photoFailed ? <Image source={{ uri: memory.imageUrl }} style={[styles.photo, { backgroundColor: palette.surfaceSoft }]} resizeMode="cover" accessibilityLabel={memory.title} onError={() => setPhotoFailed(true)} /> : <View style={[styles.photo, { backgroundColor: palette.surfaceSoft, justifyContent: 'center', padding: 24 }]}><Notice palette={palette}>Your memory is saved, but the photo preview is unavailable. Reopen this memory to retry.</Notice></View>}
-            <View style={styles.memoryWords}>
+            <View style={[styles.photoMatte, { aspectRatio: width < 600 ? 1 : 1.35, backgroundColor: palette.surfaceSoft }]}>
+              {memory.imageUrl && !photoFailed ? <Image source={{ uri: memory.imageUrl }} style={styles.photo} resizeMode="contain" accessibilityLabel={memory.title} onError={() => setPhotoFailed(true)} /> : <View style={styles.photoUnavailable}><Notice palette={palette}>Your memory is saved, but the photo preview is unavailable. Reopen this memory to retry.</Notice></View>}
+            </View>
+            <View style={[styles.memoryWords, width < 600 && styles.smallMemoryWords]}>
               {!isEditingMemory ? (
                 <>
                   <Text style={[styles.date, { color: palette.primaryPressed }]}>{formatMemoryDate(memory.date, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</Text>
                   <Text accessibilityRole="header" style={[styles.title, { color: palette.ink }]}>{memory.title}</Text>
                   {memory.milestoneTag ? <Text style={[styles.tag, { color: palette.primaryPressed, backgroundColor: palette.surfaceSoft }]}>{memory.milestoneTag}</Text> : null}
                   {memory.caption ? <Text style={[styles.caption, { color: palette.muted }]}>{memory.caption}</Text> : null}
-                  <Pressable accessibilityRole="button" onPress={() => setIsEditingMemory(true)} style={styles.editMemoryButton}><Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>Edit memory</Text></Pressable>
+                  <Pressable accessibilityRole="button" onPress={() => setIsEditingMemory(true)} style={[styles.editMemoryButton, { backgroundColor: palette.surfaceSoft }]}><Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>Edit memory</Text></Pressable>
                 </>
               ) : (
                 <MotionView duration={motion.content} style={styles.editFields}>
@@ -191,7 +196,7 @@ export default function MemoryDetailScreen() {
               })}
             </View>
 
-            <View style={styles.commentComposer}>
+            <PaperPanel palette={palette} style={styles.commentComposer}>
               <TextField
                 label={editingComment ? 'Edit your note' : 'Write a note'}
                 palette={palette}
@@ -201,9 +206,9 @@ export default function MemoryDetailScreen() {
                 maxLength={500}
                 placeholder="Add a kind word or a detail you remember…"
               />
-              <AppButton label={editingComment ? 'Save note' : 'Post note'} palette={palette} onPress={() => void submitComment()} loading={isSaving} />
+              <AppButton label={editingComment ? 'Save note' : 'Post note'} palette={palette} disabled={!commentText.trim()} onPress={() => void submitComment()} loading={isSaving} />
               {editingComment ? <AppButton label="Cancel edit" palette={palette} variant="outline" compact onPress={() => { setEditingComment(null); setCommentText(''); }} /> : null}
-            </View>
+            </PaperPanel>
 
             <View style={styles.comments}>
               <Text style={[styles.commentHeading, { color: palette.ink }]}>Notes from your people <Text style={{ color: palette.muted }}>({comments.length})</Text></Text>
@@ -218,8 +223,8 @@ export default function MemoryDetailScreen() {
                     </View>
                     {comment.userId === user?.id ? (
                       <View style={styles.commentActions}>
-                        <Pressable accessibilityRole="button" onPress={() => { setEditingComment(comment.id); setCommentText(comment.body); }}><Text style={[styles.commentAction, { color: palette.primaryPressed }]}>Edit</Text></Pressable>
-                        <Pressable accessibilityRole="button" onPress={() => void deleteOwnComment(comment)}><Text style={[styles.commentAction, { color: palette.danger }]}>Delete</Text></Pressable>
+                        <Pressable accessibilityRole="button" accessibilityLabel="Edit your note" disabled={isSaving} style={styles.commentActionButton} onPress={() => { setEditingComment(comment.id); setCommentText(comment.body); }}><Text style={[styles.commentAction, { color: palette.primaryPressed }]}>Edit</Text></Pressable>
+                        <Pressable accessibilityRole="button" accessibilityLabel="Delete your note" disabled={isSaving} style={styles.commentActionButton} onPress={() => void deleteOwnComment(comment)}><Text style={[styles.commentAction, { color: palette.danger }]}>Delete</Text></Pressable>
                       </View>
                     ) : null}
                   </View>
@@ -249,39 +254,42 @@ export default function MemoryDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  back: { alignSelf: 'flex-start', paddingVertical: 8, marginBottom: 15 },
-  loading: { marginTop: 35 },
+  back: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingRight: 12, marginBottom: 15, borderRadius: 22 },
   notice: { marginBottom: 14 },
-  heroCard: { borderRadius: 32, borderWidth: 1, padding: 12, overflow: 'hidden', maxWidth: 760, width: '100%', alignSelf: 'center' },
-  photo: { width: '100%', aspectRatio: 1.1, borderRadius: 24 },
-  memoryWords: { padding: 20, gap: 12 },
+  heroCard: { borderRadius: 30, borderWidth: 1, padding: 10, overflow: 'hidden', width: '100%' },
+  photoMatte: { width: '100%', borderRadius: 22, overflow: 'hidden', padding: 8, alignItems: 'center', justifyContent: 'center' },
+  photo: { width: '100%', height: '100%', borderRadius: 16 },
+  photoUnavailable: { width: '100%', padding: 14 },
+  memoryWords: { padding: 24, gap: 14 },
+  smallMemoryWords: { padding: 14 },
   editFields: { gap: 13 },
-  editMemoryButton: { alignSelf: 'flex-start', paddingVertical: 7 },
-  date: { textTransform: 'uppercase', letterSpacing: 1, fontSize: 12, fontWeight: '900' },
+  editMemoryButton: { alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: 17, borderRadius: 22, justifyContent: 'center', marginTop: 3 },
+  date: { textTransform: 'uppercase', letterSpacing: 0.8, fontSize: 11, lineHeight: 17, fontWeight: '900' },
   title: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 32, lineHeight: 39, fontWeight: '700', letterSpacing: -0.8 },
-  tag: { alignSelf: 'flex-start', borderRadius: 10, overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 5, fontSize: 12, fontWeight: '800' },
+  tag: { alignSelf: 'flex-start', borderRadius: 14, overflow: 'hidden', paddingHorizontal: 12, paddingVertical: 6, fontSize: 12, fontWeight: '800' },
   caption: { fontSize: 15, lineHeight: 23 },
   discussionSection: { marginTop: 29 },
   reactionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 24 },
   reaction: { flexGrow: 1, minWidth: 64, minHeight: 52, borderWidth: 1, borderRadius: 28, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6 },
   emoji: { fontSize: 18 },
   reactionCount: { fontSize: 12, fontWeight: '800' },
-  commentComposer: { gap: 10 },
+  commentComposer: { gap: 14 },
   comments: { gap: 11, marginTop: 25 },
   commentHeading: { fontSize: 16, fontWeight: '900', marginBottom: 2 },
   noComments: { fontSize: 14, lineHeight: 20, paddingVertical: 7 },
-  comment: { padding: 13, borderRadius: 18, borderWidth: 1, gap: 10 },
+  comment: { padding: 16, borderRadius: 22, borderWidth: 1, gap: 12 },
   commentHeader: { flexDirection: 'row', alignItems: 'center', gap: 9 },
   avatar: { width: 34, height: 34, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   avatarText: { fontSize: 14, fontWeight: '900' },
-  commentBy: { flex: 1, gap: 1 },
+  commentBy: { flex: 1, minWidth: 0, gap: 3 },
   author: { fontSize: 13, fontWeight: '800' },
   commentDate: { fontSize: 11 },
-  commentActions: { flexDirection: 'row', gap: 12 },
-  commentAction: { fontSize: 12, fontWeight: '800', padding: 4 },
+  commentActions: { flexDirection: 'row' },
+  commentActionButton: { minWidth: 44, minHeight: 44, paddingHorizontal: 5, justifyContent: 'center', alignItems: 'center', borderRadius: 22 },
+  commentAction: { fontSize: 12, fontWeight: '800' },
   commentBody: { fontSize: 14, lineHeight: 21 },
   deleteArea: { borderTopWidth: 1, marginTop: 27, paddingTop: 16 },
-  deleteButton: { alignSelf: 'flex-start', paddingVertical: 8 },
+  deleteButton: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingRight: 12, borderRadius: 22 },
   deleteConfirm: { gap: 12 },
   deleteActions: { flexDirection: 'row', gap: 9 }
 });

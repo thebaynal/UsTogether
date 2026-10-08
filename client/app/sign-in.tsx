@@ -4,6 +4,7 @@ import { MotionPressable as Pressable, MotionView, motion } from '@/components/M
 import { RomanticFlashcards } from '@/components/RomanticFlashcards';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppButton } from '@/components/AppButton';
+import { BrandLogo } from '@/components/BrandLogo';
 import { Notice } from '@/components/Notice';
 import { Page } from '@/components/Page';
 import { TextField } from '@/components/TextField';
@@ -64,12 +65,12 @@ export default function SignInScreen() {
         onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)}
         onPointerEnter={() => setFormHovering(true)} onPointerLeave={() => setFormHovering(false)}
         onTouchStart={() => setFormTouching(true)} onTouchEnd={() => setFormTouching(false)} onTouchCancel={() => setFormTouching(false)}>
-        <Text style={[styles.wordmark, { color: palette.primaryPressed }]}>UsTogether ♡</Text>
+        <BrandLogo palette={palette} size={38} />
         <Text accessibilityRole="header" style={[styles.title, { color: palette.ink }]}>{isCreatingAccount ? 'Create account' : 'Sign in'}</Text>
         <View style={styles.fields}>
-          {isCreatingAccount ? <MotionView duration={motion.content}><TextField label="Your name" palette={palette} value={displayName} onChangeText={setDisplayName} onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)} autoCapitalize="words" maxLength={60} /></MotionView> : null}
-          <TextField label="Email" palette={palette} value={email} onChangeText={setEmail} onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="emailAddress" />
-          <TextField label="Password" palette={palette} value={password} onChangeText={setPassword} onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)} secureTextEntry autoComplete={isCreatingAccount ? 'new-password' : 'password'} textContentType={isCreatingAccount ? 'newPassword' : 'password'} />
+          {isCreatingAccount ? <MotionView duration={motion.content}><TextField label="Your name" palette={palette} editable={!isSaving} value={displayName} onChangeText={setDisplayName} onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)} autoCapitalize="words" maxLength={60} /></MotionView> : null}
+          <TextField label="Email" palette={palette} editable={!isSaving} value={email} onChangeText={setEmail} onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)} autoCapitalize="none" autoComplete="email" keyboardType="email-address" textContentType="emailAddress" />
+          <TextField label="Password" palette={palette} editable={!isSaving} value={password} onChangeText={setPassword} onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)} secureTextEntry autoComplete={isCreatingAccount ? 'new-password' : 'password'} textContentType={isCreatingAccount ? 'newPassword' : 'password'} />
           {error ? <Notice palette={palette} tone="error">{error}</Notice> : null}
           {info ? <Notice palette={palette} tone="success">{info}</Notice> : null}
           <AppButton label={isCreatingAccount ? 'Create account' : 'Sign in'} palette={palette} onPress={submit} loading={isSaving} />
@@ -89,11 +90,11 @@ export default function SignInScreen() {
 
 const styles = StyleSheet.create({
   page: { flexGrow: 1, justifyContent: 'center', alignItems: 'stretch' },
-  layout: { width: '100%', maxWidth: 480, alignSelf: 'center', gap: 22 },
+  layout: { width: '100%', maxWidth: 480, alignSelf: 'center', gap: 24 },
   wordmark: { fontSize: 19, fontWeight: '800', letterSpacing: -0.5 },
   title: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 32, lineHeight: 38, fontWeight: '700', letterSpacing: -0.8, marginBottom: 9 },
   card: { width: '100%', gap: 14, borderRadius: 30, padding: 24, borderWidth: 1 },
-  fields: { gap: 15 },
-  switch: { paddingTop: 12, paddingBottom: 4 },
-  switchText: { textAlign: 'center', fontSize: 14 }
+  fields: { gap: 17 },
+  switch: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 4, borderRadius: 22 },
+  switchText: { textAlign: 'center', fontSize: 14, lineHeight: 21 }
 });

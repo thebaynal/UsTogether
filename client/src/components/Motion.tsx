@@ -45,13 +45,25 @@ export function MotionView({ children, style, index = 0, duration = motion.entra
 }
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-export function MotionPressable({ style, onPressIn, onPressOut, onHoverIn, onHoverOut, onFocus, onBlur, ...props }: PressableProps) {
+type MotionPressableProps = PressableProps & { 'aria-pressed'?: boolean | 'mixed' };
+export function MotionPressable({ style, onPressIn, onPressOut, onHoverIn, onHoverOut, onFocus, onBlur, ...props }: MotionPressableProps) {
   const reduced = useReducedMotion();
   const scale = useRef(new Animated.Value(1)).current;
   const opacity = useRef(new Animated.Value(1)).current;
   const [pressed, setPressed] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  // React Native Web 0.21 reads ARIA props rather than accessibilityState.
+  // Keep the native state and expose the equivalent web state on the same node.
+  const state = props.accessibilityState;
+  const webState = Platform.OS === 'web' ? {
+    'aria-busy': props['aria-busy'] ?? state?.busy,
+    'aria-checked': props['aria-checked'] ?? state?.checked,
+    // RN Web Pressable derives aria-disabled from disabled; callers also pass that prop.
+    'aria-disabled': props['aria-disabled'] ?? (props.disabled || state?.disabled),
+    'aria-expanded': props['aria-expanded'] ?? state?.expanded,
+    'aria-pressed': props['aria-pressed'] ?? (props.accessibilityRole === 'button' ? state?.selected : undefined)
+  } : {};
   const resolvedStyle = typeof style === 'function' ? style({ pressed, hovered }) : style;
   const styleOpacity = StyleSheet.flatten(resolvedStyle)?.opacity;
   const baseOpacity = typeof styleOpacity === 'number' ? styleOpacity : 1;
@@ -66,7 +78,7 @@ export function MotionPressable({ style, onPressIn, onPressOut, onHoverIn, onHov
     Animated.timing(scale, { toValue: next && !reduced ? 0.975 : 1, duration: reduced ? 0 : motion.press, useNativeDriver: Platform.OS !== 'web' }).start();
   };
   useEffect(() => { if (reduced || props.disabled) { scale.stopAnimation(); scale.setValue(1); setPressed(false); } }, [reduced, props.disabled, scale]);
-  return <AnimatedPressable {...props}
+  return <AnimatedPressable {...props} {...webState}
     onPressIn={(event) => { animate(true); onPressIn?.(event); }}
     onPressOut={(event) => { animate(false); onPressOut?.(event); }}
     onHoverIn={(event) => { setHovered(true); onHoverIn?.(event); }}

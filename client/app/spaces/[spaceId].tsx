@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Image, Platform, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Image, Platform, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { MotionPressable as Pressable, MotionView, motion } from '@/components/Motion';
 import { RomanticMark } from '@/components/RomanticMark';
 import { useSpaceTheme } from '@/features/spaces/useSpaceTheme';
@@ -8,18 +8,17 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { AppButton } from '@/components/AppButton';
 import { Notice } from '@/components/Notice';
 import { Page } from '@/components/Page';
-import { useAuth } from '@/features/auth/AuthProvider';
-import { deleteMemory, listMemories } from '@/features/memories/memoryService';
+import { LoadingState } from '@/components/LoadingState';
+import { listMemories } from '@/features/memories/memoryService';
 import { formatMemoryDate } from '@/features/memories/logic';
 import { createInvite, deleteSpace, getSpace, leaveSpace } from '@/features/spaces/spaceService';
 import type { Memory, Space } from '@/types/domain';
-import { getPalette, palettes, spaceKindLabels } from '@/theme/palettes';
+import { getPalette, spaceKindLabels } from '@/theme/palettes';
 import { requireSupabase } from '@/lib/supabase';
 
 export default function TimelineScreen() {
   const { spaceId } = useLocalSearchParams<{ spaceId: string }>();
   const router = useRouter();
-  const { user } = useAuth();
   const { width } = useWindowDimensions();
   const [space, setSpace] = useState<Space | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
@@ -35,8 +34,9 @@ export default function TimelineScreen() {
 
   const themeKey = useSpaceTheme(spaceId, space?.themeKey ?? null);
   const palette = getPalette(space?.kind ?? 'couple', themeKey);
-  const cardWidth = Math.max(270, Math.min(width - 52, 370));
-  const visibleCards = Math.max(1, Math.ceil((Math.min(width, 1120) - 48) / (cardWidth + 15)));
+  const contentWidth = Math.min(width, 1120) - (width < 600 ? 36 : 64);
+  const cardWidth = Math.max(220, Math.min(contentWidth - 24, 370));
+  const visibleCards = Math.max(1, Math.ceil(contentWidth / (cardWidth + 18)));
 
   const refresh = useCallback(async () => {
     if (!active.current) return;
@@ -112,35 +112,35 @@ export default function TimelineScreen() {
   return (
     <Page palette={palette}>
       <View style={styles.topBar}>
-        <Pressable accessibilityRole="button" onPress={() => router.replace('/spaces')} style={styles.back}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Back to all spaces" onPress={() => router.replace('/spaces')} style={styles.back}>
           <Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>‹  All spaces</Text>
         </Pressable>
-        <Pressable accessibilityRole="button" onPress={() => router.push(`/spaces/${spaceId}/theme`)} style={[styles.themeButton, { backgroundColor: palette.surfaceSoft }]}>
-          <Text accessibilityLabel="Change space theme" style={{ color: palette.primaryPressed, fontSize: 18 }}>✿</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Change space theme" disabled={!space} onPress={() => router.push(`/spaces/${spaceId}/theme`)} style={[styles.themeButton, { backgroundColor: palette.surfaceSoft }]}>
+          <Text style={{ color: palette.primaryPressed, fontSize: 20 }}>✿</Text>
         </Pressable>
       </View>
 
-      <View style={[styles.headingRow, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
+      <View style={[styles.headingRow, width < 600 && styles.smallHeading, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
         <View style={styles.headingCopy}>
-          <Text style={[styles.kindLabel, { color: palette.primaryPressed }]}>{space ? spaceKindLabels[space.kind] : 'Shared space'} / OUR LITTLE ALBUM</Text>
-          <Text accessibilityRole="header" style={[styles.title, { color: palette.ink }]}>{space?.name ?? 'Your timeline'}</Text>
+          <Text style={[styles.kindLabel, { color: palette.primaryPressed }]}>OUR {space ? spaceKindLabels[space.kind].toUpperCase() : 'SHARED'} ALBUM</Text>
+          <Text accessibilityRole="header" style={[styles.title, width < 600 && styles.smallTitle, { color: palette.ink }]}>{space?.name ?? 'Your timeline'}</Text>
           <Text style={[styles.subtitle, { color: palette.muted }]}>{space?.memberCount ?? '—'} {space?.memberCount === 1 ? 'member' : 'members'} · {memoryCountLabel}</Text>
         </View>
-        <RomanticMark palette={palette} size={64} />
+        {width >= 380 ? <RomanticMark palette={palette} size={width < 600 ? 48 : 72} /> : null}
       </View>
 
       <View style={styles.actionRow}>
         <View style={styles.actionGrow}>
-          <AppButton label="＋  Add a memory" palette={palette} onPress={() => router.push(`/spaces/${spaceId}/new-memory`)} />
+          <AppButton label="＋  Add a memory" palette={palette} disabled={!space} onPress={() => router.push(`/spaces/${spaceId}/new-memory`)} />
         </View>
-        <AppButton label={isSharing ? '…' : 'Invite'} palette={palette} onPress={() => void shareInvite()} loading={isSharing} variant="soft" compact accessibilityLabel="Create an invite link" />
+        <AppButton label="Invite" palette={palette} disabled={!space} onPress={() => void shareInvite()} loading={isSharing} variant="soft" accessibilityLabel="Create an invite link" />
       </View>
 
       {notice ? <View style={styles.notice}><Notice palette={palette} tone="success">{notice}</Notice></View> : null}
       {error ? <View style={styles.notice}><Notice palette={palette} tone="error">{error}</Notice></View> : null}
-      {isLoading ? <ActivityIndicator color={palette.primary} style={styles.loader} /> : null}
+      {isLoading ? <LoadingState palette={palette} label="Gathering your memories…" /> : null}
 
-      {!isLoading && memories.length === 0 ? (
+      {!isLoading && !error && memories.length === 0 ? (
         <View style={[styles.emptyCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
           <View style={[styles.emptyFlower, { backgroundColor: palette.surfaceSoft }]}><Text style={{ fontSize: 26, color: palette.primaryPressed }}>✿</Text></View>
           <Text style={[styles.emptyTitle, { color: palette.ink }]}>Your first memory is waiting</Text>
@@ -159,7 +159,7 @@ export default function TimelineScreen() {
             horizontal
             showsHorizontalScrollIndicator={false}
             decelerationRate="fast"
-            snapToInterval={cardWidth + 15}
+            snapToInterval={cardWidth + 18}
             snapToAlignment="start"
             disableIntervalMomentum
             contentContainerStyle={styles.timelineTrack}
@@ -173,29 +173,26 @@ export default function TimelineScreen() {
                 style={({ pressed }) => [styles.memoryCard, { width: cardWidth, backgroundColor: palette.surface, borderColor: palette.border, opacity: pressed ? 0.9 : 1 }]}
               >
                 <View style={[styles.imageFrame, { backgroundColor: palette.surfaceSoft }]}>
-                  {memory.imageUrl && !failedImages[memory.id] ? <Image source={{ uri: memory.imageUrl }} style={styles.photo} resizeMode="cover" accessibilityLabel={memory.title} onError={() => setFailedImages((current) => ({ ...current, [memory.id]: true }))} /> : <Pressable accessibilityRole="button" accessibilityLabel="Reload photo previews" onPress={() => void refresh()} style={{ padding: 24 }}><Text style={{ color: palette.primaryPressed, textAlign: 'center' }}>Photo preview unavailable. Tap to reload.</Text></Pressable>}
+                  {memory.imageUrl && !failedImages[memory.id] ? <Image source={{ uri: memory.imageUrl }} style={styles.photo} resizeMode="cover" accessibilityLabel={memory.title} onError={() => setFailedImages((current) => ({ ...current, [memory.id]: true }))} /> : <Pressable accessibilityRole="button" accessibilityLabel="Reload photo previews" onPress={(event) => { event.stopPropagation(); void refresh(); }} style={styles.photoRetry}><Text style={{ color: palette.primaryPressed, textAlign: 'center', lineHeight: 21 }}>Photo preview unavailable. Tap to reload.</Text></Pressable>}
                 </View>
                 <View style={styles.memoryText}>
                   <View style={styles.memoryMeta}>
-                    <Text style={[styles.memoryDate, { color: palette.primaryPressed }]}>{formatMemoryDate(memory.date)}</Text>
+                    <Text style={[styles.memoryDate, { color: palette.primaryPressed, backgroundColor: palette.surfaceSoft }]}>{formatMemoryDate(memory.date)}</Text>
                     <Text style={[styles.timelineNumber, { color: palette.muted }]}>{String(index + 1).padStart(2, '0')}</Text>
                   </View>
                   <Text style={[styles.memoryTitle, { color: palette.ink }]} numberOfLines={2}>{memory.title}</Text>
                   {memory.milestoneTag ? <Text style={[styles.tag, { backgroundColor: palette.surfaceSoft, color: palette.primaryPressed }]}>{memory.milestoneTag}</Text> : null}
                   {memory.caption ? <Text style={[styles.caption, { color: palette.muted }]} numberOfLines={2}>{memory.caption}</Text> : null}
+                  <View style={[styles.memoryFooter, { borderColor: palette.border }]}><Text style={[styles.openMemory, { color: palette.primaryPressed }]}>Open memory</Text><Text accessible={false} style={{ color: palette.primaryPressed, fontSize: 20 }}>↗</Text></View>
                 </View>
               </Pressable>
               </MotionView>
             ))}
           </ScrollView>
-          <View style={styles.axisWrap}>
-            <View style={[styles.axis, { backgroundColor: palette.border }]} />
-            {memories.map((memory) => <View key={memory.id} style={[styles.axisDot, { backgroundColor: palette.primary, borderColor: palette.background }]} />)}
-          </View>
         </>
       ) : null}
 
-      <View style={[styles.membership, { borderColor: palette.border }]}>
+      {space ? <View style={[styles.membership, { borderColor: palette.border }]}>
         <Text style={[styles.membershipText, { color: palette.muted }]}>Everyone here can add and care for the shared memories.</Text>
         {!pendingExit ? (
           <Pressable accessibilityRole="button" onPress={() => setPendingExit(true)} style={styles.leaveButton}>
@@ -210,50 +207,50 @@ export default function TimelineScreen() {
             </View>
           </MotionView>
         )}
-      </View>
+      </View> : null}
     </Page>
   );
 }
 
 const styles = StyleSheet.create({
   topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  back: { paddingVertical: 8, paddingRight: 14 },
+  back: { minHeight: 44, justifyContent: 'center', paddingRight: 14, borderRadius: 22 },
   themeButton: { height: 48, width: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
   headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 18, padding: 24, borderRadius: 32, borderWidth: 1 },
+  smallHeading: { padding: 20, gap: 12 },
   headingCopy: { flex: 1, gap: 5 },
   kindLabel: { textTransform: 'uppercase', fontSize: 11, letterSpacing: 1.5, fontWeight: '900' },
   title: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -1 },
+  smallTitle: { fontSize: 30, lineHeight: 37 },
   subtitle: { fontSize: 14, fontWeight: '600' },
-  heart: { fontSize: 36, transform: [{ rotate: '-10deg' }] },
   actionRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
   actionGrow: { flex: 1 },
   notice: { marginTop: 12 },
-  loader: { marginTop: 35 },
   emptyCard: { borderWidth: 1, borderRadius: 27, alignItems: 'center', padding: 24, marginTop: 22 },
   emptyFlower: { height: 54, width: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 13 },
   emptyTitle: { fontSize: 19, fontWeight: '900', textAlign: 'center' },
   emptyCopy: { fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 390, marginTop: 7 },
   emptyButton: { width: '100%', maxWidth: 350, marginTop: 18 },
-  timelineIntro: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', marginTop: 30, marginBottom: 12 },
+  timelineIntro: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', alignItems: 'baseline', marginTop: 30, marginBottom: 14 },
   timelineLabel: { fontSize: 18, fontWeight: '900' },
   swipeHint: { fontSize: 12, fontWeight: '700' },
-  timelineTrack: { gap: 15, paddingHorizontal: 1, paddingBottom: 12 },
-  memoryCard: { borderRadius: 30, borderWidth: 1, padding: 12, overflow: 'hidden' },
+  timelineTrack: { gap: 18, paddingHorizontal: 1, paddingBottom: 12 },
+  memoryCard: { borderRadius: 28, borderWidth: 1, padding: 10, overflow: 'hidden' },
   imageFrame: { width: '100%', aspectRatio: 1.04, borderRadius: 18, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
   photo: { width: '100%', height: '100%' },
-  memoryText: { paddingHorizontal: 7, paddingTop: 13, paddingBottom: 9, gap: 7 },
+  photoRetry: { padding: 24, minHeight: 44, justifyContent: 'center' },
+  memoryText: { paddingHorizontal: 9, paddingTop: 16, paddingBottom: 4, gap: 10 },
   memoryMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  memoryDate: { fontSize: 12, textTransform: 'uppercase', letterSpacing: 0.8, fontWeight: '900' },
+  memoryDate: { fontSize: 11, letterSpacing: 0.2, fontWeight: '800', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, overflow: 'hidden' },
   timelineNumber: { fontSize: 11, fontWeight: '700' },
   memoryTitle: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 24, lineHeight: 30, fontWeight: '700' },
-  tag: { alignSelf: 'flex-start', overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 9, fontSize: 11, fontWeight: '800' },
+  tag: { alignSelf: 'flex-start', overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, fontSize: 11, fontWeight: '800' },
   caption: { fontSize: 13, lineHeight: 19 },
-  axisWrap: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', height: 16, marginTop: 8, marginHorizontal: 14 },
-  axis: { position: 'absolute', left: 0, right: 0, height: 2 },
-  axisDot: { width: 10, height: 10, borderRadius: 6, borderWidth: 2 },
+  memoryFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, marginTop: 3, paddingTop: 10, paddingBottom: 4 },
+  openMemory: { fontSize: 12, fontWeight: '700' },
   membership: { marginTop: 26, paddingTop: 17, borderTopWidth: 1, gap: 8 },
   membershipText: { fontSize: 13, lineHeight: 19 },
-  leaveButton: { alignSelf: 'flex-start', paddingVertical: 8 },
+  leaveButton: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingRight: 12, borderRadius: 22 },
   leaveText: { fontSize: 13, fontWeight: '800' },
   exitConfirm: { gap: 11 },
   exitButtons: { flexDirection: 'row', gap: 9 }

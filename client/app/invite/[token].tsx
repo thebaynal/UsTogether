@@ -5,6 +5,7 @@ import { BrandHeader } from '@/components/BrandHeader';
 import { Notice } from '@/components/Notice';
 import { Page } from '@/components/Page';
 import { RomanticMark } from '@/components/RomanticMark';
+import { AppButton } from '@/components/AppButton';
 import { useAuth } from '@/features/auth/AuthProvider';
 import { acceptInvite } from '@/features/spaces/spaceService';
 import { palettes } from '@/theme/palettes';
@@ -26,14 +27,15 @@ export default function InviteScreen() {
 
   if (!isLoading && !user) return <Redirect href={`/sign-in?inviteToken=${encodeURIComponent(token ?? '')}`} />;
   return (
-    <Page palette={palettes.rose}>
+    <Page palette={palettes.rose} layout="form">
       <View style={[styles.content, { backgroundColor: palettes.rose.surfaceSoft, borderColor: palettes.rose.border }]}>
         <RomanticMark palette={palettes.rose} />
         <BrandHeader palette={palettes.rose} title={error ? 'This invite needs a fresh start' : 'You’re almost there'} subtitle={error ? 'Ask a member for a new invite link.' : 'Joining your shared space…'} />
         {error ? <Notice palette={palettes.rose} tone="error">{error}</Notice> : <ActivityIndicator color={palettes.rose.primary} />}
+        {error ? <AppButton label="Back to your albums" palette={palettes.rose} onPress={() => router.replace('/spaces')} /> : null}
       </View>
     </Page>
   );
 }
 
-const styles = StyleSheet.create({ content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 28, borderRadius: 32, borderWidth: 1, gap: 18 }, flower: { fontSize: 38, marginBottom: 15 } });
+const styles = StyleSheet.create({ content: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24, borderRadius: 32, borderWidth: 1, gap: 18 } });

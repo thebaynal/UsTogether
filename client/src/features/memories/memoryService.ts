@@ -87,6 +87,9 @@ export async function getMemory(memoryId: string): Promise<Memory> {
     .eq('id', memoryId)
     .is('deleted_at', null)
     .single();
+  if (error?.code === 'PGRST116' || (!error && !row)) {
+    throw new Error('This memory is unavailable. Return to the timeline, or ask a member for an invite.');
+  }
   raise(error);
   const typedRow = row as MemoryRow;
   return mapMemory(typedRow, await signedImageUrl(typedRow.image_path).catch(() => ''));

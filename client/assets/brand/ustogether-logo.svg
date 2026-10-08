@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 336 72" fill="none">
+  <title>UsTogether</title>
+  <g transform="translate(4 4)">
+    <rect x="2" y="2" width="60" height="60" rx="20" fill="#392632"/>
+    <g transform="rotate(-12 26 32)">
+      <rect x="14" y="14" width="25" height="35" rx="7" fill="#EAB0AD"/>
+      <path d="M20 20v23" stroke="#A44761" stroke-width="2" stroke-linecap="round"/>
+    </g>
+    <g transform="rotate(10 39 35)">
+      <rect x="26" y="19" width="25" height="35" rx="7" fill="#FFFCF5"/>
+      <path d="M31 25v23" stroke="#DFC9C3" stroke-width="1.5" stroke-linecap="round"/>
+      <path d="M40 31c-4-5-10 1-5 6l5 5 5-5c5-5-1-11-5-6Z" fill="#A44761"/>
+    </g>
+    <path d="m48 10 1.4 3.6L53 15l-3.6 1.4L48 20l-1.4-3.6L43 15l3.6-1.4L48 10Z" fill="#F5D9BE"/>
+  </g>
+  <text x="84" y="48" fill="#392632" font-family="Georgia, 'Times New Roman', serif" font-size="39" font-weight="700" letter-spacing="-1.6">UsTogether</text>
+</svg>
