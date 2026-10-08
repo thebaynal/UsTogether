@@ -22,7 +22,7 @@
 
 ## Deployment
 
-The verified preview was `https://ustogether-fqrf8f9t5-thebaynals-projects.vercel.app`. The production build was checked with production environment settings before promotion. Vercel independently confirms the Ready production deployment `dpl_6jBCk2CaAhgTq1QiTxcgfXZcSFmv` and the existing `https://ustogether-tau.vercel.app` alias. Live sign-in and the shared QA album work on that domain.
+The final verified preview was `https://ustogether-es0do6lyv-thebaynals-projects.vercel.app`. The production build was checked with production environment settings before the initial promotion; the follow-up accessibility fix passed preview checks before updating production. The Ready production deployment is `dpl_A1gqg6B3AHtbarwF72QXCzdPkydi` (`https://ustogether-oih23m0qx-thebaynals-projects.vercel.app`) on the existing `https://ustogether-tau.vercel.app` alias. Live sign-in, the shared QA album, and checked theme semantics work on that domain. GitHub verification passed for application commit `ee54e5505f92b55f9ab42bc000390f3bbd56a781` in run `37770907841`.
 
 The preceding Ready production deployment, `dpl_E5mEF5sKVXLMs4Z8CdJL6YsLACsp` (`https://ustogether-kyypgv139-thebaynals-projects.vercel.app`), is the verified rollback candidate. To roll back an authorized release, promote that deployment using Vercel; no database rollback is needed for this release because it applied no migration.
 
