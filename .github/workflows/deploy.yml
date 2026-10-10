@@ -1,4 +1,4 @@
-name: Verify and deploy to Vercel
+name: Verify and optionally publish UsTogether
 
 on:
   push:
@@ -10,63 +10,85 @@ on:
 permissions:
   contents: read
 
+# PR checks can be replaced; an active main release must finish or roll back.
 concurrency:
-  group: vercel-${{ github.ref }}
+  group: ustogether-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
+        with:
+          persist-credentials: false
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-
       - name: Install dependencies
         run: npm ci
-
       - name: TypeScript
         run: npm run typecheck
-      - name: Tests
+      - name: Regression tests
         run: npm test
-      - name: Verify web build
+      - name: Release safety tests
+        run: npm run test:deploy
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Browser behavior tests
+        run: npm run test:e2e
+      - name: Verify production export
         run: npm run build
+      - name: Retain failed browser diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-test-failures
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+      - name: Publishing status
+        if: github.ref == 'refs/heads/main' && vars.ENABLE_VERCEL_DEPLOYMENT != 'true'
+        run: |
+          echo 'Verification passed. Automatic publishing is disabled; no deployment was made by this workflow.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'To opt in later, configure VERCEL_TOKEN securely and set the ENABLE_VERCEL_DEPLOYMENT repository variable to true.' >> "$GITHUB_STEP_SUMMARY"
 
-  deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+  publish:
+    # PRs, including forks, never receive deployment credentials.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.ENABLE_VERCEL_DEPLOYMENT == 'true'
     runs-on: ubuntu-latest
     needs: verify
-    timeout-minutes: 15
+    timeout-minutes: 45
     env:
+      ENABLE_VERCEL_DEPLOYMENT: ${{ vars.ENABLE_VERCEL_DEPLOYMENT }}
       VERCEL_ORG_ID: team_HGo6OUiSMKwQ5AmVfXvxjRPP
       VERCEL_PROJECT_ID: prj_BXk6UvqA0rakAOFaTb8nZvj0PPt1
       VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      GITHUB_TOKEN: ${{ github.token }}
     steps:
-      - name: Checkout
+      - name: Require deployment credential
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo 'Publishing was enabled, but VERCEL_TOKEN is missing. No deployment was made.' >> "$GITHUB_STEP_SUMMARY"
+            echo '::error::Set VERCEL_TOKEN securely in GitHub Actions secrets, or disable ENABLE_VERCEL_DEPLOYMENT.'
+            exit 1
+          fi
+      - name: Checkout verified commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Check deployment credential
-        run: |
-          if [ -z "$VERCEL_TOKEN" ]; then
-            echo 'Checks passed. Automatic deployment is disabled until VERCEL_TOKEN is configured.' >> "$GITHUB_STEP_SUMMARY"
-          fi
-      - name: Pull production settings
-        if: env.VERCEL_TOKEN != ''
-        run: npx --yes vercel@62.1.0 pull --yes --environment=production --token="$VERCEL_TOKEN"
-      - name: Build with production environment
-        if: env.VERCEL_TOKEN != ''
-        run: npx --yes vercel@62.1.0 build --prod --token="$VERCEL_TOKEN"
-      - name: Deploy verified build
-        if: env.VERCEL_TOKEN != ''
-        run: npx --yes vercel@62.1.0 deploy --prebuilt --prod --yes --token="$VERCEL_TOKEN"
-      - name: Deployment link
-        if: env.VERCEL_TOKEN != ''
-        run: echo 'Production site is available at https://ustogether-tau.vercel.app' >> "$GITHUB_STEP_SUMMARY"
+      - name: Install pinned release CLI
+        run: npm install --global vercel@62.1.0
+      - name: Verify preview, stage production, and publish
+        run: node scripts/deploy-release.mjs

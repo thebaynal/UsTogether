@@ -4,11 +4,11 @@ A shared, private photo timeline for couples, friends, and teams. The timeline r
 
 ## Run locally
 
-1. Install Node.js 22.13 or newer and Docker Desktop. Open Docker Desktop, use Linux containers, and wait for its engine to be running. Run `docker info` in PowerShell to confirm it is reachable.
-2. Run `npm install` at the repository root.
-3. Run `npx supabase start` from the repository root. On a fresh local database, this applies the migrations automatically. Run `npx supabase status` to see the connection settings.
-4. Create or edit `client/.env.local` with the values below. Use the API URL and publishable key (or legacy anon key) from `npx supabase status`. Never use the service-role or secret key in the client.
-5. Run `npm run dev` for the Expo development server. Use `npm run web` to open the web version, or `npm run android` / `npm run ios` for a device or simulator.
+1. Install Node.js 24 and run `npm ci` at the repository root.
+2. Use the existing hosted Supabase configuration in `client/.env.local`, or set your hosted API URL and publishable key. Never use a service-role or secret key in the client. Docker is not needed when using hosted Supabase.
+3. Run `npm run web` and open the localhost URL printed by Expo. Use `npm run dev` for the Expo development server, or `npm run android` / `npm run ios` for a device or simulator.
+
+For an optional local backend, install Docker Desktop, select Linux containers, and wait until `docker info` shows a running Server. Then run `npx supabase start` at the repository root. A fresh local database applies the migrations automatically; `npx supabase status` shows the local connection values for `client/.env.local` below.
 
 Without Supabase credentials, the app shows setup instructions and does not load demo memories.
 
@@ -30,6 +30,8 @@ You can also use a hosted Supabase project in `client/.env.local`; Docker is nee
 
 - `npm run typecheck` checks the Expo app TypeScript.
 - `npm test` checks timeline ordering, dates, image validation, and theme defaults.
+- `npm run test:deploy` checks release gates, public configuration, hosted-response validation, and rollback behavior.
+- `npm run test:e2e` runs isolated browser tests against a separate web export with mock Supabase responses.
 - `npm run build` exports the web app to `client/dist`.
 - `npx supabase db reset` recreates the local database and applies migrations.
 
@@ -39,9 +41,9 @@ The web app is deployed at https://ustogether-tau.vercel.app using hosted Supaba
 
 Set `EXPO_PUBLIC_SUPABASE_URL`, `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, and `EXPO_PUBLIC_APP_URL` in the Vercel project's Preview and Production environments. Use only a publishable or legacy anon key; service-role keys must never be included in a client build. Local environment files and verification fixtures are excluded by `.vercelignore`.
 
-After `npx vercel login` and `npx vercel link`, run `npx vercel deploy --target preview` to review a build, and `npx vercel deploy --prod` to publish.
+Authorized manual releases use `node scripts/deploy-release.mjs --local` with an existing Vercel CLI 62.1.0 login and linked project. The helper requires a clean, pushed main checkout and verifies Preview plus staged Production before assigning the production domain. See [deployment instructions](docs/deployment.md) for Windows CLI setup, checks, and rollback behavior.
 
-The GitHub Actions workflow checks TypeScript, tests, and the web build on pull requests and pushes to `main`. To enable automatic Vercel deployment after successful checks, add a Vercel access token as the repository Actions secret `VERCEL_TOKEN` under Settings → Secrets and variables → Actions. Without the secret, deployment is skipped and the checks still run successfully. With it, successful pushes to `main` deploy to the existing Vercel project; you can also run the workflow manually on `main`. The workflow already includes this project's organization and project IDs. It pulls the production build environment from Vercel, builds there in the runner, and publishes the prebuilt output. Never commit the token or put it in a public build variable. GitHub Pages is no longer used. Supabase migrations remain a separate, deliberate step.
+The GitHub Actions workflow checks TypeScript, regression and release tests, browser behavior, and the production export on pull requests and pushes to `main`, without deployment secrets. Automatic publishing remains disabled unless the repository variable `ENABLE_VERCEL_DEPLOYMENT` is explicitly `true`; enabling it also requires the securely entered Actions secret `VERCEL_TOKEN`. Enabled releases verify a Preview build, independently build and verify staged Production, recheck main, then promote and verify the existing domain. A failed release check restores the previous production deployment. Fork PRs cannot publish, and Vercel's independent Git trigger is disabled so it cannot bypass the checks. Missing credentials fail an enabled publishing job rather than reporting a successful deployment. Never commit tokens or put them in public variables. GitHub Pages is no longer used; Supabase migrations remain a separate, deliberate step.
 
 Apply missing Supabase migrations before publishing changes that depend on them. The October 1 migrations enable realtime updates for space themes and repair the private storage policies' object-path references. They preserve existing data and membership restrictions. Do not reset the hosted database.
 
@@ -58,3 +60,5 @@ The first migration in `supabase/migrations` creates spaces, memberships, invita
 For production, create a Supabase project, link it with `npx supabase link`, apply migrations with `npx supabase db push`, and set `EXPO_PUBLIC_SUPABASE_URL` plus `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` in the web and EAS build environments. Configure the production web URL and native app links in Supabase Auth before sending invite links.
 
 See [UsTogether.md](UsTogether.md) for the product and data model notes.
+
+Project-local UI and motion skills are installed in `.agents/skills/`; see [the skill catalog](docs/project-skills.md). They retain the application's romantic palettes, existing motion utilities, reduced-motion support, and privacy requirements.

@@ -11,7 +11,10 @@
     "ios": "npm run ios -w client",
     "build": "npm run build -w client",
     "typecheck": "npm run typecheck -w client",
-    "test": "npm run test -w client"
+    "test": "npm run test -w client",
+    "test:e2e:typecheck": "tsc --noEmit -p e2e/tsconfig.json",
+    "test:e2e": "npm run test:e2e:typecheck && playwright test",
+    "test:deploy": "node --test scripts/deploy.test.mjs"
   },
   "overrides": {
     "react": "19.2.3",
@@ -20,6 +23,7 @@
     "source-map-js": "1.2.2"
   },
   "devDependencies": {
+    "@playwright/test": "1.64.0",
     "tsx": "^4.23.0",
     "typescript": "~6.0.3"
   },

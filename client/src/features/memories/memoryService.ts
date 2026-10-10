@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import type { ImageMimeType, Memory } from '@/types/domain';
 import { requireSupabase } from '@/lib/supabase';
+import { isProtectedReadDenied, ProtectedReadError, raiseProtectedRead } from '@/lib/protectedRead';
 import { sortMemories } from './logic';
 import { prepareImageUpload, type ImageSelection } from './imageUpload';
 
@@ -62,20 +63,23 @@ async function signedImageUrl(path: string) {
 
 export async function listMemories(spaceId: string): Promise<Memory[]> {
   const client = requireSupabase();
-  const { data: rows, error } = await client
+  const { data: rows, error, status } = await client
     .from('memories')
     .select('id,space_id,created_by,title,memory_date,caption,milestone_tag,image_path,image_mime_type,created_at')
     .eq('space_id', spaceId)
     .is('deleted_at', null)
     .order('memory_date', { ascending: true })
     .order('created_at', { ascending: true });
-  raise(error);
+  raiseProtectedRead(error, status);
   if (!rows?.length) return [];
 
   const { data: signedUrls, error: signedError } = await client.storage
     .from('memory-images')
     .createSignedUrls(rows.map((row) => row.image_path), SIGNED_URL_SECONDS);
-  if (signedError) return sortMemories(rows.map((row) => mapMemory(row as MemoryRow, '')));
+  if (signedError) {
+    if (isProtectedReadDenied(signedError)) throw new ProtectedReadError(signedError);
+    return sortMemories(rows.map((row) => mapMemory(row as MemoryRow, '')));
+  }
   const urlsByPath = new Map((signedUrls ?? []).map((item) => [item.path, item.signedUrl]));
   return sortMemories(rows.map((row) => mapMemory(row as MemoryRow, urlsByPath.get(row.image_path) ?? '')));
 }

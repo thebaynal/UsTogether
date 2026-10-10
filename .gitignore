@@ -11,7 +11,11 @@ supabase/.branches/
 .DS_Store
 .env
 .env.local
+*.log
 .tmp/
 
 .vercel
 .env*
+client/dist-e2e/
+playwright-report/
+test-results/

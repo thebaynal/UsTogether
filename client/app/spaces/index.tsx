@@ -140,5 +140,5 @@ const styles = StyleSheet.create({
   spaceName: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 29, lineHeight: 35, letterSpacing: -0.8, fontWeight: '700' },
   spaceMeta: { fontSize: 12, lineHeight: 18, fontWeight: '600' },
   chevron: { fontSize: 21 },
-  createButton: { marginTop: 24, width: '100%', maxWidth: 320 }
+  createButton: { marginTop: 24, width: '100%', maxWidth: 320, alignSelf: 'center' }
 });

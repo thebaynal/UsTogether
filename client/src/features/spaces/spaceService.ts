@@ -2,6 +2,7 @@ import * as Linking from 'expo-linking';
 import { Platform } from 'react-native';
 import type { Space, SpaceKind, SpaceMember, ThemeKey } from '@/types/domain';
 import { requireSupabase } from '@/lib/supabase';
+import { ProtectedReadError, raiseProtectedRead } from '@/lib/protectedRead';
 import { saveSpaceTheme } from './themeService';
 import { beginThemeRead, rememberSpaceTheme } from './themeCache';
 import { deleteSpaceSafely } from './spaceDeletion';
@@ -44,15 +45,15 @@ export async function listSpaces(userId: string): Promise<Space[]> {
 export async function getSpace(spaceId: string): Promise<Space> {
   const revision = beginThemeRead(spaceId);
   const client = requireSupabase();
-  const [{ data: row, error }, { count, error: countError }] = await Promise.all([
+  const [{ data: row, error, status }, { count, error: countError, status: countStatus }] = await Promise.all([
     client.from('spaces').select('id,name,kind,theme_key,created_at').eq('id', spaceId).single(),
     client.from('space_members').select('user_id', { count: 'exact', head: true }).eq('space_id', spaceId)
   ]);
   if (error?.code === 'PGRST116' || (!error && !row)) {
-    throw new Error('This album is unavailable. Ask a member for an invite, or return to your albums.');
+    throw new ProtectedReadError({ code: 'PGRST116', message: 'This album is unavailable. Ask a member for an invite, or return to your albums.' }, status);
   }
-  raise(error);
-  raise(countError);
+  raiseProtectedRead(error, status);
+  raiseProtectedRead(countError, countStatus);
   rememberSpaceTheme(spaceId, (row as SpaceRow).theme_key, revision);
   return mapSpace(row as SpaceRow, count ?? 1);
 }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AppState, Platform, ScrollView, StyleSheet, Text, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { MotionPressable, useReducedMotion } from './Motion';
+import { MotionPressable, useReducedMotion, useHoverCapability } from './Motion';
 import { RomanticMark } from './RomanticMark';
 import { palettes } from '@/theme/palettes';
 
@@ -18,6 +18,7 @@ const peek = 28;
 
 export function RomanticFlashcards({ paused }: { paused: boolean }) {
   const reduced = useReducedMotion();
+  const canHover = useHoverCapability();
   const scroll = useRef<ScrollView>(null);
   const offset = useRef(0);
   const position = useRef(1);
@@ -26,6 +27,7 @@ export function RomanticFlashcards({ paused }: { paused: boolean }) {
   const [active, setActive] = useState(0);
   const [userPaused, setUserPaused] = useState(false);
   const [touching, setTouching] = useState(false);
+  const touchActive = useRef(false);
   const [hovering, setHovering] = useState(false);
   const [controlFocused, setControlFocused] = useState(false);
   const [scrolling, setScrolling] = useState(false);
@@ -56,7 +58,9 @@ export function RomanticFlashcards({ paused }: { paused: boolean }) {
   }, [stride, width]);
 
   const settle = useCallback(() => {
-    if (!width) return;
+    // A paused finger is still manipulating the rail. Boundary normalization
+    // must wait for release rather than moving the content underneath it.
+    if (!width || touchActive.current) return;
     let next = Math.max(0, Math.min(slides.length - 1, Math.round(offset.current / stride)));
     const logical = (next + cards.length - 1) % cards.length;
     if (next === 0 || next === slides.length - 1) {
@@ -86,7 +90,7 @@ export function RomanticFlashcards({ paused }: { paused: boolean }) {
     scroll.current?.scrollTo({ x: next * stride, animated: !reduced });
   }, [reduced, stride, width]);
 
-  const autoPlaying = !paused && !userPaused && !reduced && !touching && !hovering && !controlFocused
+  const autoPlaying = !paused && !userPaused && !reduced && !touching && !(canHover && hovering) && !controlFocused
     && !scrolling && screenFocused && foreground && visible && width > 0;
   useEffect(() => {
     if (!autoPlaying) return;
@@ -104,10 +108,23 @@ export function RomanticFlashcards({ paused }: { paused: boolean }) {
     settleTimer.current = setTimeout(settle, 180);
   }
 
+  function finishTouch() {
+    touchActive.current = false;
+    setTouching(false);
+    if (settleTimer.current) clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(settle, 180);
+  }
+
   return <View accessibilityLiveRegion="none" testID="romantic-flashcards"
     onLayout={(event) => setWidth(event.nativeEvent.layout.width)}
-    onPointerEnter={() => setHovering(true)} onPointerLeave={() => setHovering(false)}
-    onTouchStart={() => setTouching(true)} onTouchEnd={() => setTouching(false)} onTouchCancel={() => setTouching(false)}
+    onPointerEnter={(event) => {
+      if (canHover && (event.nativeEvent.pointerType === 'mouse' || event.nativeEvent.pointerType === 'pen')) setHovering(true);
+    }} onPointerLeave={() => setHovering(false)}
+    onTouchStart={() => {
+      touchActive.current = true;
+      setTouching(true);
+      if (settleTimer.current) clearTimeout(settleTimer.current);
+    }} onTouchEnd={finishTouch} onTouchCancel={finishTouch}
     style={styles.wrap}>
     <ScrollView ref={scroll} testID="romantic-flashcards-scroll" horizontal
       pagingEnabled={Platform.OS === 'web'}

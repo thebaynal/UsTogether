@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from 'react-native';
-import { MotionPressable as Pressable, MotionView, motion } from '@/components/Motion';
+import { MotionPressable as Pressable, MotionView, motion, useHoverCapability } from '@/components/Motion';
 import { RomanticFlashcards } from '@/components/RomanticFlashcards';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { AppButton } from '@/components/AppButton';
@@ -12,6 +12,7 @@ import { signIn, signUp } from '@/features/auth/authService';
 import { palettes } from '@/theme/palettes';
 
 export default function SignInScreen() {
+  const canHover = useHoverCapability();
   const palette = palettes.rose;
   const router = useRouter();
   const { inviteToken } = useLocalSearchParams<{ inviteToken?: string }>();
@@ -63,7 +64,9 @@ export default function SignInScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.layout}>
       <View style={[styles.card, { backgroundColor: palette.surface, borderColor: palette.border }]}
         onFocus={() => setFormFocused(true)} onBlur={() => setFormFocused(false)}
-        onPointerEnter={() => setFormHovering(true)} onPointerLeave={() => setFormHovering(false)}
+        onPointerEnter={(event) => {
+          if (canHover && (event.nativeEvent.pointerType === 'mouse' || event.nativeEvent.pointerType === 'pen')) setFormHovering(true);
+        }} onPointerLeave={() => setFormHovering(false)}
         onTouchStart={() => setFormTouching(true)} onTouchEnd={() => setFormTouching(false)} onTouchCancel={() => setFormTouching(false)}>
         <BrandLogo palette={palette} size={38} />
         <Text accessibilityRole="header" style={[styles.title, { color: palette.ink }]}>{isCreatingAccount ? 'Create account' : 'Sign in'}</Text>
@@ -82,7 +85,7 @@ export default function SignInScreen() {
           </Text>
         </Pressable>
       </View>
-      <RomanticFlashcards paused={formFocused || formHovering || formTouching || isSaving} />
+      <RomanticFlashcards paused={formFocused || (canHover && formHovering) || formTouching || isSaving} />
       </KeyboardAvoidingView>
     </Page>
   );

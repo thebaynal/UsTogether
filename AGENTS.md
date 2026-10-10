@@ -33,14 +33,18 @@ Run commands from the repository root:
 
 - `npm run typecheck`
 - `npm test`
+- `npm run test:deploy`
+- `npm run test:e2e` (isolated Chromium browser checks; no real account credentials)
 - `npm run build` (exports `client/dist`)
 - `npm run web` for browser verification
 
 Choose checks appropriate to the change. For UI work, inspect affected mobile and desktop layouts, keyboard/focus behavior, and relevant loading, empty, error, and populated states. For uploads, themes, auth, or invitations, check a success path and the meaningful failure paths. Agent-definition-only changes need configuration validation rather than an application build.
 
-The GitHub workflow verifies pull requests and main pushes. Production deployment is conditional on `VERCEL_TOKEN`; the user has chosen to leave that optional. Adding or using agents does not enable deployment or grant new authorization to publish. Follow the current user's deployment instructions and verify a preview before an authorized production release.
+The GitHub workflow verifies pull requests and main pushes without deployment secrets. The user has chosen to keep automatic publishing disabled for now: it requires an explicit `ENABLE_VERCEL_DEPLOYMENT=true` repository variable plus the securely entered `VERCEL_TOKEN` secret. An enabled release verifies Preview and independent staged Production, rechecks main, promotes, checks the existing domain, and restores the previous deployment if release checks fail. Vercel's independent Git deployment trigger is disabled. Adding or using agents does not authorize publishing. Authorized manual releases may use existing Vercel login through `node scripts/deploy-release.mjs --local` after checks, from a clean pushed main checkout. See `docs/deployment.md` for setup and security details, including CLI-managed protected-preview bypass tokens.
 
 ## Project agents
+
+Project skills are installed in `.agents/skills/` from the user's local skill collection. Use `apple-design` for interface and motion refinement while preserving the romantic palettes and photo-first layout. Apply platform-specific recipes only when they fit the installed Expo/React Native versions; skill examples do not authorize new dependencies or override reduced-motion, privacy, or deployment requirements. See `docs/project-skills.md` for the installed catalog.
 
 Definitions and usage examples are in `.codex/agents/README.md`. When delegation is requested, choose only roles relevant to the task:
 

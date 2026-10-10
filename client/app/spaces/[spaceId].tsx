@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Platform, ScrollView, Share, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { MotionPressable as Pressable, MotionView, motion } from '@/components/Motion';
-import { RomanticMark } from '@/components/RomanticMark';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ActivityIndicator, BackHandler, Platform, Share, StyleSheet, Text, View } from 'react-native';
+import { MotionPressable as Pressable, MotionView, motion, useHoverCapability, type MotionPressableHandle } from '@/components/Motion';
+import { AlbumOptionsDialog } from '@/components/AlbumOptionsDialog';
+import { PhotoTimeline, focusControl, type PhotoTimelineHandle } from '@/components/PhotoTimeline';
 import { useSpaceTheme } from '@/features/spaces/useSpaceTheme';
 import * as Clipboard from 'expo-clipboard';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -10,33 +11,44 @@ import { Notice } from '@/components/Notice';
 import { Page } from '@/components/Page';
 import { LoadingState } from '@/components/LoadingState';
 import { listMemories } from '@/features/memories/memoryService';
-import { formatMemoryDate } from '@/features/memories/logic';
 import { createInvite, deleteSpace, getSpace, leaveSpace } from '@/features/spaces/spaceService';
 import type { Memory, Space } from '@/types/domain';
-import { getPalette, spaceKindLabels } from '@/theme/palettes';
+import { getPalette } from '@/theme/palettes';
 import { requireSupabase } from '@/lib/supabase';
+import { isProtectedReadDenied } from '@/lib/protectedRead';
+import { rememberSpaceTheme } from '@/features/spaces/themeCache';
+
+const unavailableAlbum = 'This album is unavailable. Ask a member for an invite, or return to your albums.';
 
 export default function TimelineScreen() {
+  const canHover = useHoverCapability();
   const { spaceId } = useLocalSearchParams<{ spaceId: string }>();
   const router = useRouter();
-  const { width } = useWindowDimensions();
   const [space, setSpace] = useState<Space | null>(null);
   const [memories, setMemories] = useState<Memory[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSharing, setIsSharing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [controlsPinned, setControlsPinned] = useState(false);
+  const [hovering, setHovering] = useState(false);
+  const [controlsDismissed, setControlsDismissed] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const [pendingExit, setPendingExit] = useState(false);
   const [isExiting, setIsExiting] = useState(false);
-  const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const [exitError, setExitError] = useState<string | null>(null);
   const active = useRef(false);
+  const focusGeneration = useRef(0);
   const request = useRef(0);
-
+  const sharing = useRef(false);
+  const exiting = useRef(false);
+  const accessRevision = useRef(0);
+  const photoTimeline = useRef<PhotoTimelineHandle>(null);
+  const controlsTrigger = useRef<MotionPressableHandle>(null);
+  const optionsTrigger = useRef<MotionPressableHandle>(null);
   const themeKey = useSpaceTheme(spaceId, space?.themeKey ?? null);
   const palette = getPalette(space?.kind ?? 'couple', themeKey);
-  const contentWidth = Math.min(width, 1120) - (width < 600 ? 36 : 64);
-  const cardWidth = Math.max(220, Math.min(contentWidth - 24, 370));
-  const visibleCards = Math.max(1, Math.ceil(contentWidth / (cardWidth + 18)));
+  const controlsVisible = controlsPinned || (canHover && hovering && !controlsDismissed) || isSharing || optionsOpen;
 
   const refresh = useCallback(async () => {
     if (!active.current) return;
@@ -44,22 +56,45 @@ export default function TimelineScreen() {
     try {
       const [nextSpace, nextMemories] = await Promise.allSettled([getSpace(spaceId), listMemories(spaceId)]);
       if (!active.current || revision !== request.current) return;
+      // A successful sibling request must not briefly repopulate private data
+      // when the other protected read confirms that access has been revoked.
+      for (const result of [nextSpace, nextMemories]) {
+        if (result.status === 'rejected' && isProtectedReadDenied(result.reason)) throw result.reason;
+      }
       if (nextSpace.status === 'fulfilled') setSpace(nextSpace.value);
-      if (nextMemories.status === 'fulfilled') { setMemories(nextMemories.value); setFailedImages({}); }
+      if (nextMemories.status === 'fulfilled') setMemories(nextMemories.value);
       if (nextSpace.status === 'rejected') throw nextSpace.reason;
       if (nextMemories.status === 'rejected') throw nextMemories.reason;
       setError(null);
     } catch (cause) {
-      if (active.current && revision === request.current) setError(cause instanceof Error ? cause.message : 'This space could not be loaded.');
+      if (active.current && revision === request.current) {
+        if (isProtectedReadDenied(cause)) {
+          accessRevision.current++;
+          setSpace(null);
+          setMemories([]);
+          setOptionsOpen(false);
+          setPendingExit(false);
+          setExitError(null);
+          setNotice(null);
+          setControlsPinned(false);
+          setControlsDismissed(true);
+          setHovering(false);
+          setIsSharing(false);
+          setIsExiting(false);
+          rememberSpaceTheme(spaceId, null);
+          setError(unavailableAlbum);
+        } else setError(cause instanceof Error ? cause.message : 'This space could not be loaded.');
+      }
     } finally {
       if (active.current && revision === request.current) setIsLoading(false);
     }
   }, [spaceId]);
 
   useFocusEffect(useCallback(() => {
+    focusGeneration.current++;
     active.current = true;
     void refresh();
-    return () => { active.current = false; request.current++; };
+    return () => { active.current = false; focusGeneration.current++; request.current++; };
   }, [refresh]));
 
   useEffect(() => {
@@ -68,190 +103,148 @@ export default function TimelineScreen() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'memories', filter: `space_id=eq.${spaceId}` }, () => { void refresh(); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'spaces', filter: `id=eq.${spaceId}` }, () => { void refresh(); })
       .subscribe();
-
-    return () => {
-      void client.removeChannel(channel);
-    };
+    return () => { void client.removeChannel(channel); };
   }, [spaceId, refresh]);
 
+  const revealControls = useCallback(() => { setControlsPinned(true); setControlsDismissed(false); }, []);
+  const closeOptions = useCallback(() => {
+    if (exiting.current) return;
+    setOptionsOpen(false);
+    setPendingExit(false);
+    setExitError(null);
+    requestAnimationFrame(() => focusControl(optionsTrigger.current ?? controlsTrigger.current));
+  }, []);
+
+  const dismissLayer = useCallback(() => {
+    if (!active.current) return false;
+    if (optionsOpen) { closeOptions(); return true; }
+    if (photoTimeline.current?.collapseDetails()) return true;
+    if (controlsVisible) {
+      setControlsPinned(false);
+      setControlsDismissed(true);
+      requestAnimationFrame(() => focusControl(controlsTrigger.current));
+      return true;
+    }
+    return false;
+  }, [closeOptions, controlsVisible, optionsOpen]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      const escape = (event: KeyboardEvent) => {
+        // RN Web's Modal owns Escape while its focus trap is active.
+        if (!optionsOpen && event.key === 'Escape' && !event.defaultPrevented && dismissLayer()) event.preventDefault();
+      };
+      document.addEventListener('keydown', escape);
+      return () => document.removeEventListener('keydown', escape);
+    }
+    const subscription = BackHandler.addEventListener('hardwareBackPress', dismissLayer);
+    return () => subscription.remove();
+  }, [dismissLayer, optionsOpen]);
+
   async function shareInvite() {
+    if (sharing.current || !space) return;
+    sharing.current = true;
+    const revision = accessRevision.current;
     setIsSharing(true);
     setError(null);
     try {
       const invite = await createInvite(spaceId);
+      if (!active.current || revision !== accessRevision.current) return;
       if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
         await Clipboard.setStringAsync(invite.url);
-        setNotice('Invite link copied. It expires in 7 days and works once.');
+        if (active.current && revision === accessRevision.current) setNotice('Invite link copied. It expires in 7 days and works once.');
       } else {
-        await Share.share({ message: `Come add memories with us: ${invite.url}`, url: invite.url, title: `Join ${space?.name ?? 'our space'}` });
-        setNotice('Your invite link is ready. It expires in 7 days and works once.');
+        await Share.share({ message: `Come add memories with us: ${invite.url}`, url: invite.url, title: `Join ${space.name}` });
+        if (active.current && revision === accessRevision.current) setNotice('Your invite link is ready. It expires in 7 days and works once.');
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not create an invite link.');
-    } finally {
-      setIsSharing(false);
-    }
+      if (active.current && revision === accessRevision.current) setError(cause instanceof Error ? cause.message : 'Could not create an invite link.');
+    } finally { sharing.current = false; setIsSharing(false); }
   }
 
   async function confirmExit() {
-    if (!space) return;
+    if (!space || exiting.current) return;
+    exiting.current = true;
+    const revision = accessRevision.current;
+    const originFocus = focusGeneration.current;
     setIsExiting(true);
-    setError(null);
+    setExitError(null);
     try {
       if (space.memberCount === 1) await deleteSpace(space.id);
       else await leaveSpace(space.id);
-      router.replace('/spaces');
+      // A realtime refresh may observe our successful exit before the RPC
+      // responds. Complete that exit while still on its originating screen.
+      if (active.current && originFocus === focusGeneration.current) router.replace('/spaces');
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not leave this space.');
-      setIsExiting(false);
-    }
+      if (active.current && revision === accessRevision.current) setExitError(cause instanceof Error ? cause.message : 'Could not leave this space.');
+    } finally { exiting.current = false; setIsExiting(false); }
   }
 
-  const memoryCountLabel = useMemo(() => `${memories.length} ${memories.length === 1 ? 'memory' : 'memories'}`, [memories.length]);
-
-  return (
-    <Page palette={palette}>
-      <View style={styles.topBar}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Back to all spaces" onPress={() => router.replace('/spaces')} style={styles.back}>
-          <Text style={{ color: palette.primaryPressed, fontWeight: '800' }}>‹  All spaces</Text>
-        </Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Change space theme" disabled={!space} onPress={() => router.push(`/spaces/${spaceId}/theme`)} style={[styles.themeButton, { backgroundColor: palette.surfaceSoft }]}>
-          <Text style={{ color: palette.primaryPressed, fontSize: 20 }}>✿</Text>
-        </Pressable>
-      </View>
-
-      <View style={[styles.headingRow, width < 600 && styles.smallHeading, { backgroundColor: palette.surfaceSoft, borderColor: palette.border }]}>
-        <View style={styles.headingCopy}>
-          <Text style={[styles.kindLabel, { color: palette.primaryPressed }]}>OUR {space ? spaceKindLabels[space.kind].toUpperCase() : 'SHARED'} ALBUM</Text>
-          <Text accessibilityRole="header" style={[styles.title, width < 600 && styles.smallTitle, { color: palette.ink }]}>{space?.name ?? 'Your timeline'}</Text>
-          <Text style={[styles.subtitle, { color: palette.muted }]}>{space?.memberCount ?? '—'} {space?.memberCount === 1 ? 'member' : 'members'} · {memoryCountLabel}</Text>
-        </View>
-        {width >= 380 ? <RomanticMark palette={palette} size={width < 600 ? 48 : 72} /> : null}
-      </View>
-
-      <View style={styles.actionRow}>
-        <View style={styles.actionGrow}>
-          <AppButton label="＋  Add a memory" palette={palette} disabled={!space} onPress={() => router.push(`/spaces/${spaceId}/new-memory`)} />
-        </View>
-        <AppButton label="Invite" palette={palette} disabled={!space} onPress={() => void shareInvite()} loading={isSharing} variant="soft" accessibilityLabel="Create an invite link" />
-      </View>
-
-      {notice ? <View style={styles.notice}><Notice palette={palette} tone="success">{notice}</Notice></View> : null}
-      {error ? <View style={styles.notice}><Notice palette={palette} tone="error">{error}</Notice></View> : null}
-      {isLoading ? <LoadingState palette={palette} label="Gathering your memories…" /> : null}
-
-      {!isLoading && !error && memories.length === 0 ? (
-        <View style={[styles.emptyCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
-          <View style={[styles.emptyFlower, { backgroundColor: palette.surfaceSoft }]}><Text style={{ fontSize: 26, color: palette.primaryPressed }}>✿</Text></View>
-          <Text style={[styles.emptyTitle, { color: palette.ink }]}>Your first memory is waiting</Text>
-          <Text style={[styles.emptyCopy, { color: palette.muted }]}>Add a photo and a date. It will find its place in your timeline.</Text>
-          <View style={styles.emptyButton}><AppButton label="Add the first memory" palette={palette} onPress={() => router.push(`/spaces/${spaceId}/new-memory`)} /></View>
-        </View>
-      ) : null}
-
-      {memories.length > 0 ? (
-        <>
-          <View style={styles.timelineIntro}>
-            <Text style={[styles.timelineLabel, { color: palette.ink }]}>Your story, in order</Text>
-            <Text style={[styles.swipeHint, { color: palette.muted }]}>Swipe to wander  ›</Text>
+  return <Page palette={palette}>
+    <View style={styles.topBar}>
+      <Pressable accessibilityRole="button" accessibilityLabel="Back to all spaces" onPress={() => router.replace('/spaces')} style={styles.back}>
+        <Text accessible={false} style={{ color: palette.primaryPressed, fontSize: 29, lineHeight: 34 }}>‹</Text>
+      </Pressable>
+      <Text accessibilityRole="header" accessibilityLabel={space?.name ?? 'Your timeline'} numberOfLines={1} style={[styles.title, { color: palette.ink }]}>{space?.name ?? 'Your timeline'}</Text>
+      <Pressable ref={controlsTrigger} accessibilityRole="button"
+        accessibilityLabel={controlsVisible ? 'Hide album controls' : 'Show album controls'} accessibilityState={{ expanded: controlsVisible }}
+        disabled={!space} onPress={() => { setControlsPinned(!controlsVisible); setControlsDismissed(controlsVisible); }}
+        style={[styles.controlsTrigger, { backgroundColor: palette.surfaceSoft }]}><Text accessible={false} style={{ color: palette.primaryPressed, fontSize: 22 }}>{controlsVisible ? '×' : '•••'}</Text></Pressable>
+    </View>
+    <View onPointerEnter={(event) => {
+      if (canHover && (event.nativeEvent.pointerType === 'mouse' || event.nativeEvent.pointerType === 'pen')) {
+        setHovering(true); setControlsDismissed(false);
+      }
+    }} onPointerLeave={() => setHovering(false)}>
+      <View testID="album-controls" style={styles.toolbarSlot}>
+        {controlsVisible && space ? <MotionView duration={motion.content} style={styles.toolbarWrap}>
+          <View style={[styles.toolbar, { backgroundColor: palette.surface, borderColor: palette.border, shadowColor: palette.shadow }]}>
+            <Pressable accessibilityRole="button" accessibilityLabel="Add a memory" disabled={!space} onFocus={revealControls}
+              onPress={() => router.push(`/spaces/${spaceId}/new-memory`)} style={[styles.addButton, { backgroundColor: palette.primary }]}><Text style={styles.addText}>＋  Add a memory</Text></Pressable>
+            <Pressable accessibilityRole="button" accessibilityLabel="Create an invite link" accessibilityState={{ busy: isSharing }} disabled={!space || isSharing} onFocus={revealControls}
+              onPress={() => void shareInvite()} style={[styles.toolbarButton, { backgroundColor: palette.surfaceSoft }]}><Text style={[styles.toolbarText, { color: palette.primaryPressed, opacity: isSharing ? 0 : 1 }]}>Invite</Text>{isSharing ? <ActivityIndicator color={palette.primaryPressed} style={StyleSheet.absoluteFill} /> : null}</Pressable>
+            <Pressable ref={optionsTrigger} accessibilityRole="button" accessibilityLabel="Album options" accessibilityState={{ expanded: optionsOpen }} disabled={!space} onFocus={revealControls}
+              onPress={() => { revealControls(); setOptionsOpen(true); }} style={[styles.optionsButton, { backgroundColor: palette.surfaceSoft }]}><Text accessible={false} style={{ color: palette.primaryPressed, fontSize: 20 }}>•••</Text></Pressable>
           </View>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            decelerationRate="fast"
-            snapToInterval={cardWidth + 18}
-            snapToAlignment="start"
-            disableIntervalMomentum
-            contentContainerStyle={styles.timelineTrack}
-          >
-            {memories.map((memory, index) => (
-              <MotionView key={memory.id} index={index < visibleCards ? index : 0} duration={index < visibleCards ? motion.entrance : 0}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`${memory.title}, ${formatMemoryDate(memory.date)}. Open memory.`}
-                onPress={() => router.push(`/memories/${memory.id}?spaceId=${spaceId}`)}
-                style={({ pressed }) => [styles.memoryCard, { width: cardWidth, backgroundColor: palette.surface, borderColor: palette.border, opacity: pressed ? 0.9 : 1 }]}
-              >
-                <View style={[styles.imageFrame, { backgroundColor: palette.surfaceSoft }]}>
-                  {memory.imageUrl && !failedImages[memory.id] ? <Image source={{ uri: memory.imageUrl }} style={styles.photo} resizeMode="cover" accessibilityLabel={memory.title} onError={() => setFailedImages((current) => ({ ...current, [memory.id]: true }))} /> : <Pressable accessibilityRole="button" accessibilityLabel="Reload photo previews" onPress={(event) => { event.stopPropagation(); void refresh(); }} style={styles.photoRetry}><Text style={{ color: palette.primaryPressed, textAlign: 'center', lineHeight: 21 }}>Photo preview unavailable. Tap to reload.</Text></Pressable>}
-                </View>
-                <View style={styles.memoryText}>
-                  <View style={styles.memoryMeta}>
-                    <Text style={[styles.memoryDate, { color: palette.primaryPressed, backgroundColor: palette.surfaceSoft }]}>{formatMemoryDate(memory.date)}</Text>
-                    <Text style={[styles.timelineNumber, { color: palette.muted }]}>{String(index + 1).padStart(2, '0')}</Text>
-                  </View>
-                  <Text style={[styles.memoryTitle, { color: palette.ink }]} numberOfLines={2}>{memory.title}</Text>
-                  {memory.milestoneTag ? <Text style={[styles.tag, { backgroundColor: palette.surfaceSoft, color: palette.primaryPressed }]}>{memory.milestoneTag}</Text> : null}
-                  {memory.caption ? <Text style={[styles.caption, { color: palette.muted }]} numberOfLines={2}>{memory.caption}</Text> : null}
-                  <View style={[styles.memoryFooter, { borderColor: palette.border }]}><Text style={[styles.openMemory, { color: palette.primaryPressed }]}>Open memory</Text><Text accessible={false} style={{ color: palette.primaryPressed, fontSize: 20 }}>↗</Text></View>
-                </View>
-              </Pressable>
-              </MotionView>
-            ))}
-          </ScrollView>
-        </>
-      ) : null}
-
-      {space ? <View style={[styles.membership, { borderColor: palette.border }]}>
-        <Text style={[styles.membershipText, { color: palette.muted }]}>Everyone here can add and care for the shared memories.</Text>
-        {!pendingExit ? (
-          <Pressable accessibilityRole="button" onPress={() => setPendingExit(true)} style={styles.leaveButton}>
-            <Text style={[styles.leaveText, { color: palette.primaryPressed }]}>{space?.memberCount === 1 ? 'Delete space' : 'Leave space'}</Text>
-          </Pressable>
-        ) : (
-          <MotionView duration={motion.content} style={styles.exitConfirm}>
-            <Text style={[styles.membershipText, { color: palette.ink }]}>{space?.memberCount === 1 ? 'This removes the space and its memories.' : 'You’ll lose access to this timeline.'}</Text>
-            <View style={styles.exitButtons}>
-              <AppButton label="Cancel" palette={palette} variant="outline" compact onPress={() => setPendingExit(false)} />
-              <AppButton label={space?.memberCount === 1 ? 'Delete' : 'Leave'} palette={palette} variant="danger" compact loading={isExiting} onPress={() => void confirmExit()} />
-            </View>
-          </MotionView>
-        )}
+        </MotionView> : null}
+      </View>
+      {notice ? <View style={styles.notice}><Notice palette={palette} tone="success">{notice}</Notice></View> : null}
+      {error ? <View style={styles.error}><Notice palette={palette} tone="error">{error}</Notice><View style={styles.retry}><AppButton label="Retry loading memories" palette={palette} variant="outline" compact onPress={() => void refresh()} /></View></View> : null}
+      {isLoading ? <LoadingState palette={palette} label="Gathering your memories…" /> : null}
+      {!isLoading && !error && memories.length === 0 ? <View style={[styles.emptyCard, { backgroundColor: palette.surface, borderColor: palette.border }]}>
+        <Text accessible={false} style={[styles.emptyMark, { color: palette.primaryPressed }]}>♡</Text>
+        <Text style={[styles.emptyTitle, { color: palette.ink }]}>Your first memory is waiting</Text>
+        <Text style={[styles.emptyCopy, { color: palette.muted }]}>Add a photo and a date. It will find its place in your timeline.</Text>
+        <View style={styles.emptyButton}><AppButton label="Add the first memory" palette={palette} disabled={!space} onPress={() => router.push(`/spaces/${spaceId}/new-memory`)} /></View>
       </View> : null}
-    </Page>
-  );
+      {memories.length > 0 ? <PhotoTimeline ref={photoTimeline} memories={memories} palette={palette} onRevealControls={revealControls}
+        restoreFocusEnabled={!optionsOpen} onRetry={() => void refresh()} onOpen={(memory) => router.push(`/memories/${memory.id}?spaceId=${spaceId}`)} /> : null}
+    </View>
+    {space ? <AlbumOptionsDialog visible={optionsOpen} space={space} memoryCount={memories.length} palette={palette} pendingExit={pendingExit} isExiting={isExiting} error={exitError}
+      onClose={closeOptions} onChangeTheme={() => { setOptionsOpen(false); setPendingExit(false); router.push(`/spaces/${spaceId}/theme`); }}
+      onRequestExit={() => setPendingExit(true)} onCancelExit={() => { setPendingExit(false); setExitError(null); }} onConfirmExit={() => void confirmExit()} /> : null}
+  </Page>;
 }
 
 const styles = StyleSheet.create({
-  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  back: { minHeight: 44, justifyContent: 'center', paddingRight: 14, borderRadius: 22 },
-  themeButton: { height: 48, width: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center' },
-  headingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 18, padding: 24, borderRadius: 32, borderWidth: 1 },
-  smallHeading: { padding: 20, gap: 12 },
-  headingCopy: { flex: 1, gap: 5 },
-  kindLabel: { textTransform: 'uppercase', fontSize: 11, letterSpacing: 1.5, fontWeight: '900' },
-  title: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 34, lineHeight: 41, fontWeight: '700', letterSpacing: -1 },
-  smallTitle: { fontSize: 30, lineHeight: 37 },
-  subtitle: { fontSize: 14, fontWeight: '600' },
-  actionRow: { flexDirection: 'row', gap: 10, alignItems: 'center' },
-  actionGrow: { flex: 1 },
-  notice: { marginTop: 12 },
-  emptyCard: { borderWidth: 1, borderRadius: 27, alignItems: 'center', padding: 24, marginTop: 22 },
-  emptyFlower: { height: 54, width: 54, borderRadius: 18, alignItems: 'center', justifyContent: 'center', marginBottom: 13 },
-  emptyTitle: { fontSize: 19, fontWeight: '900', textAlign: 'center' },
-  emptyCopy: { fontSize: 14, lineHeight: 21, textAlign: 'center', maxWidth: 390, marginTop: 7 },
-  emptyButton: { width: '100%', maxWidth: 350, marginTop: 18 },
-  timelineIntro: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, justifyContent: 'space-between', alignItems: 'baseline', marginTop: 30, marginBottom: 14 },
-  timelineLabel: { fontSize: 18, fontWeight: '900' },
-  swipeHint: { fontSize: 12, fontWeight: '700' },
-  timelineTrack: { gap: 18, paddingHorizontal: 1, paddingBottom: 12 },
-  memoryCard: { borderRadius: 28, borderWidth: 1, padding: 10, overflow: 'hidden' },
-  imageFrame: { width: '100%', aspectRatio: 1.04, borderRadius: 18, overflow: 'hidden', alignItems: 'center', justifyContent: 'center' },
-  photo: { width: '100%', height: '100%' },
-  photoRetry: { padding: 24, minHeight: 44, justifyContent: 'center' },
-  memoryText: { paddingHorizontal: 9, paddingTop: 16, paddingBottom: 4, gap: 10 },
-  memoryMeta: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  memoryDate: { fontSize: 11, letterSpacing: 0.2, fontWeight: '800', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 12, overflow: 'hidden' },
-  timelineNumber: { fontSize: 11, fontWeight: '700' },
-  memoryTitle: { fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 24, lineHeight: 30, fontWeight: '700' },
-  tag: { alignSelf: 'flex-start', overflow: 'hidden', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, fontSize: 11, fontWeight: '800' },
-  caption: { fontSize: 13, lineHeight: 19 },
-  memoryFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderTopWidth: 1, marginTop: 3, paddingTop: 10, paddingBottom: 4 },
-  openMemory: { fontSize: 12, fontWeight: '700' },
-  membership: { marginTop: 26, paddingTop: 17, borderTopWidth: 1, gap: 8 },
-  membershipText: { fontSize: 13, lineHeight: 19 },
-  leaveButton: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingRight: 12, borderRadius: 22 },
-  leaveText: { fontSize: 13, fontWeight: '800' },
-  exitConfirm: { gap: 11 },
-  exitButtons: { flexDirection: 'row', gap: 9 }
+  topBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 },
+  back: { height: 44, width: 44, justifyContent: 'center', alignItems: 'center', borderRadius: 22 },
+  controlsTrigger: { height: 44, width: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  title: { flex: 1, fontFamily: Platform.OS === 'web' ? 'Georgia' : undefined, fontSize: 24, lineHeight: 30, letterSpacing: -0.6, fontWeight: '700', textAlign: 'center' },
+  toolbarSlot: { height: 72, justifyContent: 'center', alignItems: 'center' },
+  toolbarWrap: { width: '100%', maxWidth: 480 },
+  toolbar: { flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8, borderRadius: 31, borderWidth: 1, shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.1, shadowRadius: 10, elevation: 2 },
+  addButton: { flex: 1, minHeight: 44, borderRadius: 22, paddingHorizontal: 12, alignItems: 'center', justifyContent: 'center' },
+  addText: { fontSize: 13, lineHeight: 18, fontWeight: '700', color: '#FFFFFF', textAlign: 'center' },
+  toolbarButton: { minHeight: 44, minWidth: 68, borderRadius: 22, paddingHorizontal: 14, justifyContent: 'center', alignItems: 'center' },
+  toolbarText: { fontSize: 13, lineHeight: 18, fontWeight: '700' },
+  optionsButton: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
+  notice: { marginBottom: 16 },
+  error: { gap: 12, marginBottom: 18 },
+  retry: { width: '100%', maxWidth: 240, alignSelf: 'center' },
+  emptyCard: { borderWidth: 1, borderRadius: 28, alignItems: 'center', padding: 28, width: '100%', maxWidth: 560, alignSelf: 'center' },
+  emptyMark: { fontSize: 46, marginBottom: 14 },
+  emptyTitle: { fontSize: 19, lineHeight: 26, fontWeight: '800', textAlign: 'center' },
+  emptyCopy: { fontSize: 14, lineHeight: 22, textAlign: 'center', maxWidth: 360, marginTop: 8 },
+  emptyButton: { width: '100%', maxWidth: 300, marginTop: 22 }
 });
