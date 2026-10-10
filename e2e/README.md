@@ -16,6 +16,10 @@ into this child build; HTTP and WebSocket responses are controlled by the
 test-side fixture. Unexpected remote calls fail tests. Each browser context
 receives fresh data and synthetic auth storage; production auth is unchanged.
 
+Both exports clear Metro's transform cache because Expo can otherwise reuse
+inlined environment values from the other build. The production build also
+checks every emitted web bundle and rejects the fixture origin/key.
+
 Chromium omits file-backed multipart bytes from request interception. A test-side
 fetch observer records the selected browser File's name, MIME type, size, and
 SHA-256 before forwarding the original fetch unchanged. Upload assertions compare

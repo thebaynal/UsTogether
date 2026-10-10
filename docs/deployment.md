@@ -2,6 +2,8 @@
 
 Production is [ustogether-tau.vercel.app](https://ustogether-tau.vercel.app), backed by hosted Supabase. Builds run at the repository root with Node 24, `npm ci`, and `npm run build`; Vercel publishes `client/dist`. Local Supabase/Docker is not needed for deployment. Hosted database migrations remain a separate, deliberate operation; never reset the hosted database.
 
+Exports clear Metro's transform cache before bundling so Preview, Production, and isolated browser tests cannot reuse each other's inlined configuration. `npm run build` also rejects any emitted bundle containing the fake browser-test origin or key before deployment begins; hosted release checks repeat that guard.
+
 ## GitHub checks and optional publishing
 
 Pull requests and pushes to `main` run TypeScript, existing regression tests, release safety tests, Chromium browser tests, and the production export. These checks do not receive deployment secrets. Fork PRs use the same checks and cannot publish. The workflow uses `pull_request`, never `pull_request_target`, and uploads no environment files or browser-test configuration.

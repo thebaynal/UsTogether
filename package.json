@@ -9,7 +9,7 @@
     "web": "npm run web -w client",
     "android": "npm run android -w client",
     "ios": "npm run ios -w client",
-    "build": "npm run build -w client",
+    "build": "npm run build -w client && node scripts/verify-export.mjs",
     "typecheck": "npm run typecheck -w client",
     "test": "npm run test -w client",
     "test:e2e:typecheck": "tsc --noEmit -p e2e/tsconfig.json",

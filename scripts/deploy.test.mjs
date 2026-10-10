@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve, sep } from 'node:path';
 import test from 'node:test';
 import { releaseConfig } from './deploy-release.mjs';
+import { verifyExport } from './verify-export.mjs';
 import {
   PRODUCTION_URL, VERCEL_ORG_ID, VERCEL_PROJECT_ID, assertCurrentMain,
   assertJavaScriptResponse, assertSpaResponse, deploymentFromJson,
@@ -83,6 +86,24 @@ test('HTTP response parsing checks the final header block', () => {
   assert.deepEqual(parseResponseHeaders('HTTP/1.1 200 Connection established\r\n\r\nHTTP/2 200\r\nContent-Type: application/javascript\r\nX-Test: value\r\n\r\n'), {
     'content-type': 'application/javascript', 'x-test': 'value',
   });
+});
+
+test('production build guard rejects fixture configuration in any emitted bundle', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ustogether-export-test-'));
+  try {
+    const bundles = join(directory, '_expo/static/js/web');
+    mkdirSync(bundles, { recursive: true });
+    writeFileSync(join(directory, 'index.html'), document);
+    writeFileSync(join(bundles, 'entry-test.js'), 'window.app = true;');
+    assert.equal(await verifyExport(directory), 1);
+    for (const marker of ['ustogether-test.invalid', 'sb_publishable_isolated_browser_fixture']) {
+      writeFileSync(join(bundles, 'unreferenced-chunk.js'), `window.configuration="${marker}";`);
+      await assert.rejects(verifyExport(directory), /browser-test configuration/);
+    }
+  } finally {
+    if (!resolve(directory).startsWith(resolve(tmpdir()) + sep)) throw new Error('Unexpected test directory.');
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 function harness({ previewFailure = false, stagedFailure = false, publishedFailure = false, rollbackFailure = false, mainMoves = false } = {}) {

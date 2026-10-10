@@ -7,7 +7,7 @@
     "web": "expo start --web",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "build": "expo export --platform web",
+    "build": "expo export --platform web --clear",
     "typecheck": "tsc --noEmit",
     "test": "tsx tests/domain.test.ts && tsx tests/imageUpload.test.ts && tsx tests/themeService.test.ts && tsx tests/spaceDeletion.test.ts"
   },

@@ -10,7 +10,7 @@ const expo = resolve(dirname(require.resolve('expo/package.json')), 'bin/cli');
 // These values belong only to this child export. Production uses its own build
 // and client/dist; the fake origin cannot contact a hosted Supabase project.
 if (process.env.E2E_SKIP_BUILD !== '1') {
-  const result = spawnSync(process.execPath, [expo, 'export', '--platform', 'web', '--output-dir', 'dist-e2e'], {
+  const result = spawnSync(process.execPath, [expo, 'export', '--platform', 'web', '--output-dir', 'dist-e2e', '--clear'], {
     cwd: resolve(root, 'client'),
     stdio: 'inherit',
     env: {

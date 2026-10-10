@@ -6,9 +6,9 @@ The timeline now centers the selected whole photo, hides its story until activat
 
 - App TypeScript: passed.
 - Four existing `tsx` regression suites: passed.
-- Deployment safety tests: 13 passed.
+- Deployment safety tests: 14 passed, including rejection of fixture-contaminated export chunks.
 - Fresh isolated Chromium export and browser suite: 65 passed, one intentionally skipped desktop case for the mobile-only held-finger regression. Viewports: 390 × 844 and 1280 × 900; short-dialog check: 568 × 320.
-- Production web export: passed after the final gesture fix.
+- Production web export clears Metro's cache and checks every emitted JavaScript bundle before publication. The final artifact scan caught stale fixture configuration before any deployment; cache clearing and the new build guard prevent that output from being released.
 - Eight project-local skills: validated; reference files and MIT license retained.
 - Reviewer and security auditor: no remaining confirmed findings in the integrated changes.
 
