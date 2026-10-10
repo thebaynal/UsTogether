@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import test from 'node:test';
-import { releaseConfig } from './deploy-release.mjs';
+import { releaseConfig, vercelChildEnvironment, vercelRunner } from './deploy-release.mjs';
 import { verifyExport } from './verify-export.mjs';
 import {
   PRODUCTION_URL, VERCEL_ORG_ID, VERCEL_PROJECT_ID, assertCurrentMain,
@@ -37,6 +37,39 @@ test('an explicit local release uses existing login and requires clean linked ma
   assert.equal(releaseConfig({}, { local: true, context }).expectedSha, SHA);
   assert.throws(() => releaseConfig({}, { local: true, context: { ...context, clean: false } }), /clean main/);
   assert.throws(() => releaseConfig({}, { local: true, context: { ...context, branch: 'feature' } }), /clean main/);
+});
+
+test('Windows Vercel builds retain the system PATH without conflicting spellings', () => {
+  const original = { Path: 'C:\\Windows\\System32;C:\\Program Files\\nodejs', PUBLIC_SETTING: 'unchanged' };
+  const child = vercelChildEnvironment(original, 'win32');
+  assert.equal(child.PATH, original.Path);
+  assert.equal(child.PUBLIC_SETTING, original.PUBLIC_SETTING);
+  assert.equal('Path' in child, false);
+  assert.equal(original.Path, child.PATH);
+  assert.equal('PATH' in original, false);
+  assert.equal(child.EXPO_NO_DOTENV, '1');
+  const duplicate = vercelChildEnvironment({ Path: 'old', PATH: 'canonical' }, 'win32');
+  assert.equal(duplicate.PATH, 'canonical');
+  assert.deepEqual(Object.keys(duplicate).filter(key => key.toLowerCase() === 'path'), ['PATH']);
+  assert.equal(vercelChildEnvironment({ PATH: '/usr/bin', Path: 'case-sensitive-setting' }, 'linux').Path, 'case-sensitive-setting');
+});
+
+test('protected curl receives only its own arguments, with credentials kept in the environment', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'ustogether-cli-test-'));
+  try {
+    const cli = join(directory, 'fake-cli.mjs');
+    writeFileSync(cli, `console.log(JSON.stringify({ args: process.argv.slice(2), tokenPresent: process.env.VERCEL_TOKEN === 'test-token', noColor: process.env.NO_COLOR, dotenvDisabled: process.env.EXPO_NO_DOTENV }));`);
+    const run = vercelRunner({ ...process.env, VERCEL_CLI_PATH: cli, VERCEL_TOKEN: 'test-token' });
+    const args = ['curl', '/sign-in', '--deployment', 'https://test.vercel.app', '--yes', '--', '--silent'];
+    const result = JSON.parse(await run(args));
+    assert.deepEqual(result.args, args);
+    assert.equal(result.tokenPresent, true);
+    assert.equal(result.noColor, '1');
+    assert.equal(result.dotenvDisabled, '1');
+    assert.equal(result.args.includes('test-token'), false);
+    const inspectArgs = ['inspect', 'https://test.vercel.app', '--json'];
+    assert.deepEqual(JSON.parse(await run(inspectArgs)).args, inspectArgs);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
 test('superseded or malformed main SHAs cannot publish', () => {

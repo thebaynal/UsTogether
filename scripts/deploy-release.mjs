@@ -45,14 +45,29 @@ export function releaseConfig(env, { local = false, context } = {}) {
   return { expectedSha, repository: env.GITHUB_REPOSITORY, productionUrl: PRODUCTION_URL, orgId, projectId };
 }
 
-function vercelRunner(env) {
+export function vercelChildEnvironment(env, platform = process.platform) {
+  const childEnv = { ...env, VERCEL_TELEMETRY_DISABLED: '1', NO_COLOR: '1', EXPO_NO_DOTENV: '1' };
+  // Vercel's static builder reads PATH on a plain object. Windows commonly
+  // supplies Path; duplicate spellings can then hide the system shell path.
+  if (platform === 'win32') {
+    const pathKeys = Object.keys(childEnv).filter(key => key.toLowerCase() === 'path');
+    const searchPath = childEnv.PATH ?? childEnv.Path ?? childEnv[pathKeys[0]];
+    for (const key of pathKeys) delete childEnv[key];
+    if (searchPath !== undefined) childEnv.PATH = searchPath;
+  }
+  return childEnv;
+}
+
+export function vercelRunner(env) {
   const executable = env.VERCEL_CLI_PATH ? process.execPath : 'vercel';
   const prefix = env.VERCEL_CLI_PATH ? [env.VERCEL_CLI_PATH] : [];
   return (args, { timeout = 15 * 60_000, quietFailure = false } = {}) => new Promise((resolve, reject) => {
     // Never enable debug/trace: CLI protection-bypass debug output contains credentials.
-    const auth = env.VERCEL_TOKEN?.trim() ? ['--token', env.VERCEL_TOKEN] : [];
-    const child = spawn(executable, [...prefix, ...auth, '--no-color', ...args], {
-      env: { ...env, VERCEL_TELEMETRY_DISABLED: '1', NO_COLOR: '1', EXPO_NO_DOTENV: '1' },
+    // The CLI reads VERCEL_TOKEN and NO_COLOR from the environment. Its beta
+    // curl parser forwards unrecognized global flags to the underlying curl.
+    // Keep credentials and presentation flags out of command arguments.
+    const child = spawn(executable, [...prefix, ...args], {
+      env: vercelChildEnvironment(env),
       stdio: ['ignore', 'pipe', 'pipe'], shell: false,
     });
     let stdout = '', stderr = '', exceeded = false;
